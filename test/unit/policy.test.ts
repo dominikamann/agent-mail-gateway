@@ -37,7 +37,9 @@ describe('evaluateSenderAuth', () => {
   });
 
   it('uses aligned dkim or spf when there is no dmarc result', () => {
-    expect(evaluateSenderAuth(['mx; dkim=pass header.d=example.net'], 'a@example.net')).toBe('pass');
+    expect(evaluateSenderAuth(['mx; dkim=pass header.d=example.net'], 'a@example.net')).toBe(
+      'pass',
+    );
     expect(
       evaluateSenderAuth(['mx; spf=pass smtp.mailfrom=bounce@example.net'], 'a@example.net'),
     ).toBe('pass');

@@ -141,7 +141,7 @@ Sends a cancellation to all attendees.
 
 ## Health
 
-`GET /health` (no key): `{ "status": "ok" | "degraded", "mailboxes": [{ "name": "ole", "state": "connected" }] }`.
+`GET /health` (no key): `{ "status": "ok" | "degraded", "mailboxes": [{ "name": "assistant", "state": "connected" }] }`.
 States: `connected`, `reconnecting`, `error`, `stopped`.
 
 ## Webhooks
