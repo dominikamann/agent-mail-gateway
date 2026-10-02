@@ -7,6 +7,10 @@ export const dateTimeString = z
     'ISO 8601 date-time, e.g. 2026-10-05T14:00 or 2026-10-05T14:00:00+02:00',
   );
 
+export const sinceString = z
+  .union([z.iso.date(), dateTimeString])
+  .describe('Only messages received at or after this date (YYYY-MM-DD) or date-time');
+
 const email = z.email();
 
 export const attachmentInput = z.object({

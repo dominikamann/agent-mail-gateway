@@ -90,6 +90,8 @@ export async function listMessages(
         );
         continue;
       }
+      // IMAP SINCE only compares whole days; narrow it down to the exact time.
+      if (q.since && parsed.date && new Date(parsed.date) < q.since) continue;
       messages.push(summary(encodeMessageId(validity, f.uid), parsed, f.seen));
       if (messages.length === q.limit) break;
     }

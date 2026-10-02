@@ -29,6 +29,10 @@ export class FakeImap implements ImapMailbox {
   }
   onNewMail(listener: () => void) {
     this.listeners.push(listener);
+    return () => {
+      const i = this.listeners.indexOf(listener);
+      if (i >= 0) this.listeners.splice(i, 1);
+    };
   }
   add(raw: Buffer, seen = false): number {
     const uid = this.nextUid++;

@@ -32,13 +32,15 @@ export interface ImapMailbox {
   setSeen(uid: number, seen: boolean): Promise<void>;
   moveToTrash(uid: number): Promise<void>;
   appendToSent(raw: Buffer): Promise<void>;
-  onNewMail(listener: () => void): void;
+  /** Registers a listener for new mail; returns a function that removes it. */
+  onNewMail(listener: () => void): () => void;
 }
 
 const MAX_BACKOFF_MS = 60_000;
 
 export class ImapFlowMailbox implements ImapMailbox {
   private client: ImapFlow | null = null;
+  private pending: ImapFlow | null = null;
   private status: ConnectionState = 'stopped';
   private readonly listeners: (() => void)[] = [];
   private backoffMs = 1000;
@@ -58,6 +60,8 @@ export class ImapFlowMailbox implements ImapMailbox {
   async stop(): Promise<void> {
     this.status = 'stopped';
     if (this.timer) clearTimeout(this.timer);
+    this.pending?.close();
+    this.pending = null;
     const c = this.client;
     this.client = null;
     if (c) await c.logout().catch(() => c.close());
@@ -67,8 +71,12 @@ export class ImapFlowMailbox implements ImapMailbox {
     return this.status;
   }
 
-  onNewMail(listener: () => void): void {
+  onNewMail(listener: () => void): () => void {
     this.listeners.push(listener);
+    return () => {
+      const i = this.listeners.indexOf(listener);
+      if (i >= 0) this.listeners.splice(i, 1);
+    };
   }
 
   private async connect(): Promise<void> {
@@ -91,24 +99,29 @@ export class ImapFlowMailbox implements ImapMailbox {
     client.on('close', () => {
       if (this.client === client) this.scheduleReconnect('reconnecting');
     });
+    this.pending = client;
     try {
       await client.connect();
       await client.mailboxOpen('INBOX');
+      this.pending = null;
       if (this.status === 'stopped') {
         await client.logout().catch(() => client.close());
         return;
       }
       this.client = client;
+      this.folders = null;
       this.status = 'connected';
       this.backoffMs = 1000;
       this.log.info({ mailbox: this.cfg.name }, 'imap connected');
       for (const l of this.listeners) l();
     } catch (err) {
+      this.pending = null;
+      client.close();
+      if (this.status === 'stopped') return;
       this.log.error(
         { mailbox: this.cfg.name, err: (err as Error).message },
         'imap connect failed',
       );
-      client.close();
       this.scheduleReconnect('error');
     }
   }
@@ -195,26 +208,48 @@ export class ImapFlowMailbox implements ImapMailbox {
 
     let sent = byName(this.cfg.folders.sent) ?? bySpecial('\\Sent') ?? byName('Sent');
     if (!sent) {
-      sent = this.cfg.folders.sent ?? 'Sent';
-      await c.mailboxCreate(sent);
+      const name = this.cfg.folders.sent ?? 'Sent';
+      sent = name;
+      // A concurrent call may have created it already; only fail if it still does not exist.
+      await c.mailboxCreate(name).catch(async (err: Error) => {
+        const again = await c.list();
+        if (!again.some((f) => f.path.toLowerCase() === name.toLowerCase())) throw err;
+      });
     }
     const trash = byName(this.cfg.folders.trash) ?? bySpecial('\\Trash') ?? byName('Trash') ?? null;
     this.folders = { sent, trash };
     return this.folders;
   }
 
+  /** Runs `fn` with the resolved folders; on failure re-detects folders once and retries. */
+  private async withFolders(
+    fn: (folders: { sent: string; trash: string | null }) => Promise<unknown>,
+  ): Promise<void> {
+    try {
+      await fn(await this.resolveFolders(this.require()));
+    } catch {
+      this.folders = null;
+      await fn(await this.resolveFolders(this.require()));
+    }
+  }
+
   async moveToTrash(uid: number): Promise<void> {
-    const c = this.require();
-    const { trash } = await this.resolveFolders(c);
-    await this.withInbox(async (inbox) => {
-      if (trash) await inbox.messageMove(String(uid), trash, { uid: true });
-      else await inbox.messageDelete(String(uid), { uid: true });
-    });
+    await this.withFolders(({ trash }) =>
+      this.withInbox(async (inbox) => {
+        if (trash) {
+          const moved = await inbox.messageMove(String(uid), trash, { uid: true });
+          if (!moved) throw new Error(`could not move message to ${trash}`);
+        } else {
+          await inbox.messageDelete(String(uid), { uid: true });
+        }
+      }),
+    );
   }
 
   async appendToSent(raw: Buffer): Promise<void> {
-    const c = this.require();
-    const { sent } = await this.resolveFolders(c);
-    await c.append(sent, raw, ['\\Seen']);
+    await this.withFolders(async ({ sent }) => {
+      const res = await this.require().append(sent, raw, ['\\Seen']);
+      if (!res) throw new Error(`could not append to ${sent}`);
+    });
   }
 }

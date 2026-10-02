@@ -38,7 +38,9 @@ export async function startGateway(
   const gateway = new Gateway(contexts);
   const app = await buildApp(gateway, { loggerInstance: log });
 
-  await Promise.all(contexts.map((c) => c.imap.start()));
+  // Connect in the background so the API and /health are available immediately,
+  // even while a mail server is slow or unreachable.
+  for (const c of contexts) void c.imap.start();
   const watchers = contexts.map((c) => new InboundWatcher(c));
   for (const w of watchers) w.start();
   const dispatcher = new WebhookDispatcher({
@@ -60,9 +62,9 @@ export async function startGateway(
     app,
     gateway,
     async stop() {
-      dispatcher.stop();
-      for (const w of watchers) w.stop();
       await app.close();
+      await Promise.all(watchers.map((w) => w.stop()));
+      await dispatcher.stop();
       await Promise.all(contexts.map((c) => c.imap.stop()));
       for (const c of contexts) c.smtp.close();
       store.close();

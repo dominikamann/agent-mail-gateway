@@ -18,3 +18,16 @@ All notable changes to this project are documented here. The format follows
 - REST API with OpenAPI docs, MCP server over Streamable HTTP.
 - Signed webhooks with persistent retries; IMAP IDLE with polling fallback.
 - Send rate limit, audit log, health endpoint, Docker image.
+
+### Hardening
+
+- The API and `/health` are available immediately, even while a mail server is slow or down.
+- Clean shutdown: in-flight webhook deliveries and mailbox checks finish before exit.
+- Attachments are served with `nosniff` and a sandbox CSP.
+- Renamed or deleted Sent/Trash folders are detected again without a restart.
+- Stopping the watcher also stops reacting to new-mail notifications.
+- `since` accepts plain dates in MCP too, and filters by exact time instead of whole days.
+- Hostile HTML can no longer stall mail processing; conversion time is bounded.
+- Messages with several `From` headers or a DMARC result for another domain are rejected.
+- The send limit holds under parallel requests.
+- Event updates check capacity first and are saved as soon as the update is sent.

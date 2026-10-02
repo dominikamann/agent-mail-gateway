@@ -75,6 +75,16 @@ describe('ImapFlowMailbox against GreenMail', () => {
     expect(await gm.count('agent@test.local', 'Sent')).toBe(1);
   });
 
+  it('recovers when the Sent folder is deleted while running', async () => {
+    const admin = await gm.client('agent@test.local');
+    await admin.mailboxDelete('Sent');
+    await admin.logout();
+    await mailbox.appendToSent(
+      Buffer.from('From: agent@test.local\r\nSubject: again\r\n\r\nx\r\n'),
+    );
+    expect(await gm.count('agent@test.local', 'Sent')).toBe(1);
+  });
+
   it('does not throw on start when the server is unreachable', async () => {
     const broken = new ImapFlowMailbox(
       gm.mailboxConfig('agent@test.local', {

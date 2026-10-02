@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { toUtc } from '../calendar/time.js';
+import { resolveSince } from '../calendar/time.js';
 import { GatewayError } from '../errors.js';
 import { authenticate } from '../http/auth.js';
 import type { MailboxContext } from '../services/context.js';
@@ -17,11 +17,11 @@ import {
   markMessage,
 } from '../services/messages.js';
 import {
-  dateTimeString,
   eventPatchSchema,
   eventShape,
   sendMessageSchema,
   sendMessageShape,
+  sinceString,
 } from '../services/schemas.js';
 import { sendMessage } from '../services/send.js';
 import { VERSION } from '../version.js';
@@ -72,7 +72,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
         'List received messages (newest first). Only mail from allowed senders is visible.',
       inputSchema: {
         unread: z.boolean().optional(),
-        since: dateTimeString.optional(),
+        since: sinceString.optional(),
         limit: z.number().int().min(1).max(50).default(20),
         cursor: z.string().optional().describe('next_cursor from a previous call'),
       },
@@ -82,7 +82,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
         json(
           await listMessages(ctx, {
             unread: a.unread,
-            since: a.since ? toUtc(a.since, ctx.config.timezone) : undefined,
+            since: a.since ? resolveSince(a.since, ctx.config.timezone) : undefined,
             limit: a.limit,
             cursor: a.cursor,
           }),

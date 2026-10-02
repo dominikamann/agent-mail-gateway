@@ -50,3 +50,8 @@ export function formatInZone(date: Date, timeZone: string): string {
   }).format(date);
   return `${text} (${timeZone})`;
 }
+
+/** Accepts `YYYY-MM-DD` (start of that day) or an ISO date-time, interpreted in `timeZone`. */
+export function resolveSince(value: string, timeZone: string): Date {
+  return toUtc(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00` : value, timeZone);
+}

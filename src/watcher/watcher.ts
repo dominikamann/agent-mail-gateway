@@ -9,11 +9,12 @@ export class InboundWatcher {
   private running: Promise<void> | null = null;
   private rerun = false;
   private timer: NodeJS.Timeout | null = null;
+  private unsubscribe: (() => void) | null = null;
 
   constructor(private readonly ctx: MailboxContext) {}
 
   start(): void {
-    this.ctx.imap.onNewMail(() => void this.processNew());
+    this.unsubscribe = this.ctx.imap.onNewMail(() => void this.processNew());
     this.timer = setInterval(
       () => void this.processNew(),
       this.ctx.config.poll_interval_seconds * 1000,
@@ -22,9 +23,13 @@ export class InboundWatcher {
     void this.processNew();
   }
 
-  stop(): void {
+  /** Stops reacting to new mail and resolves once a run in progress has finished. */
+  async stop(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+    await this.running;
   }
 
   processNew(): Promise<void> {

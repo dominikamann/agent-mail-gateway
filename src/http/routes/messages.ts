@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { toUtc } from '../../calendar/time.js';
+import { resolveSince } from '../../calendar/time.js';
 import {
   deleteMessage,
   getAttachment,
@@ -8,7 +8,7 @@ import {
   listMessages,
   markMessage,
 } from '../../services/messages.js';
-import { dateTimeString, sendMessageSchema } from '../../services/schemas.js';
+import { sendMessageSchema, sinceString } from '../../services/schemas.js';
 import { sendMessage } from '../../services/send.js';
 import { mailboxOf } from '../auth.js';
 
@@ -24,7 +24,7 @@ export const messageRoutes: FastifyPluginAsyncZod = async (app) => {
         summary: 'List allowed messages in INBOX, newest first',
         querystring: z.object({
           unread: z.stringbool().optional(),
-          since: z.union([z.iso.date(), dateTimeString]).optional(),
+          since: sinceString.optional(),
           limit: z.coerce.number().int().min(1).max(50).default(20),
           cursor: z.string().optional(),
         }),
@@ -33,9 +33,7 @@ export const messageRoutes: FastifyPluginAsyncZod = async (app) => {
     async (req) => {
       const ctx = mailboxOf(req);
       const q = req.query;
-      const since = q.since
-        ? toUtc(q.since.length === 10 ? `${q.since}T00:00` : q.since, ctx.config.timezone)
-        : undefined;
+      const since = q.since ? resolveSince(q.since, ctx.config.timezone) : undefined;
       return listMessages(ctx, { unread: q.unread, since, limit: q.limit, cursor: q.cursor });
     },
   );
@@ -66,6 +64,8 @@ export const messageRoutes: FastifyPluginAsyncZod = async (app) => {
       const a = await getAttachment(mailboxOf(req), req.params.id, req.params.index);
       return reply
         .type(a.contentType)
+        .header('x-content-type-options', 'nosniff')
+        .header('content-security-policy', 'sandbox')
         .header(
           'content-disposition',
           `attachment; filename*=UTF-8''${encodeURIComponent(a.filename)}`,

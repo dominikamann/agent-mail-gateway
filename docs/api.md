@@ -44,8 +44,9 @@ Every error has the same shape:
 
 ### `GET /v1/messages`
 
-Query: `unread` (`true`/`false`), `since` (`2026-10-01` or ISO date-time), `limit` (1–50,
-default 20), `cursor` (`next_cursor` from the previous page). Newest first; INBOX only.
+Query: `unread` (`true`/`false`), `since` (`2026-10-01` for the start of that day, or an ISO
+date-time; without an offset it is read in the mailbox `timezone`), `limit` (1–50, default 20),
+`cursor` (`next_cursor` from the previous page). Newest first; INBOX only.
 
 ```json
 {
@@ -75,7 +76,9 @@ Returns the summary fields plus `message_id`, `body_markdown` and
 
 ### `GET /v1/messages/{id}/attachments/{index}`
 
-Returns the raw file with its content type.
+Returns the raw file with its content type, served with `Content-Disposition: attachment`,
+`X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox` so that files cannot
+run in a browser.
 
 ### `PATCH /v1/messages/{id}`
 
