@@ -5,8 +5,6 @@
 
 Give every AI agent its own email mailbox — without giving it the keys to that mailbox.
 
-*An open-source project by [amannlabs.eu](https://amannlabs.eu).*
-
 Agent Mail Gateway is a small self-hosted Docker service that sits between your agents and
 ordinary IMAP/SMTP mailboxes (Plesk, IONOS, Outlook, your own server — any provider). Each agent
 gets **one API key bound to exactly one mailbox**. Through the gateway it can read mail, send
@@ -15,6 +13,23 @@ agent may receive mail from and who it may write to**; everything else is filter
 
 Mail bodies are delivered to the agent as **Markdown** (converted from HTML) and the agent
 writes Markdown that is sent as HTML — far fewer tokens than raw HTML email.
+
+**In short:** a self-hosted **email MCP server** and REST API for AI agents — IMAP/SMTP
+mailbox access with sender/recipient allow lists, HTML-to-Markdown, attachments and calendar
+invites, packaged as one Docker container.
+
+### Typical use cases
+
+- An assistant agent that sends you daily reports, summaries or alerts by email.
+- Agents that receive tasks or documents by email and answer them in the same thread.
+- Agents that schedule, move and cancel meetings with you via calendar invitations.
+- Giving several agents separate mailboxes on your existing mail server (Plesk, IONOS,
+  Outlook, Postfix/Dovecot, …) without exposing the mailbox passwords to them.
+- Locking an agent down so it can only talk to approved people — useful against prompt
+  injection by email and against agents mailing the wrong people.
+
+Works with any MCP client (for example Hermes Agent, Cursor, VS Code, n8n, LangChain/LangGraph
+MCP adapters) and with anything that can make HTTP requests.
 
 ## Features
 

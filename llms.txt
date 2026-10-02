@@ -1,0 +1,25 @@
+# Agent Mail Gateway
+
+> Self-hosted email gateway and MCP server that gives each AI agent its own mailbox. Agents get one API key bound to one IMAP/SMTP mailbox and can read mail (as Markdown), send mail with attachments, and send/update/cancel calendar invites — restricted by per-mailbox allow lists for senders and recipients. One Docker container, MIT license.
+
+Use it when an agent needs email: sending reports or alerts, receiving tasks by email, replying in threads, scheduling meetings, or several agents with separate mailboxes on an existing mail server — without giving the agent the mailbox password or unrestricted access.
+
+- Image: `ghcr.io/dominikamann/agent-mail-gateway`
+- MCP endpoint: `POST /mcp` (Streamable HTTP), header `Authorization: Bearer <api_key>`
+- REST API: `/v1` (OpenAPI at `/docs`)
+- MCP tools: get_mailbox_info, list_messages, read_message, get_attachment, mark_message, delete_message, send_message, create_event, update_event, cancel_event, list_events
+
+## Docs
+
+- [README](https://github.com/dominikamann/agent-mail-gateway/blob/main/README.md): overview and quick start
+- [Configuration](https://github.com/dominikamann/agent-mail-gateway/blob/main/docs/configuration.md): every option, allow lists, ports, sender authentication
+- [API](https://github.com/dominikamann/agent-mail-gateway/blob/main/docs/api.md): REST endpoints, error codes, webhooks, MCP tools
+- [Hermes Agent](https://github.com/dominikamann/agent-mail-gateway/blob/main/docs/hermes.md): MCP setup and the agent-mail plugin
+- [Security](https://github.com/dominikamann/agent-mail-gateway/blob/main/docs/security.md): threat model and guarantees
+
+## Optional
+
+- [Example config](https://github.com/dominikamann/agent-mail-gateway/blob/main/config.example.yaml)
+- [Agent skill](https://github.com/dominikamann/agent-mail-gateway/blob/main/integrations/hermes/agent-mail-gateway/skills/agent-mail/SKILL.md): how an agent should use the mailbox tools
+
+Provided by amannlabs.eu (https://amannlabs.eu).
