@@ -83,6 +83,10 @@ Errors come back as JSON with an `error` code:
 | `not_found` | The message or event does not exist (or is not visible to you). Refresh with `list_messages` / `list_events`. |
 | `delete_not_allowed` | Deleting is disabled for your mailbox; leave the message. |
 | `validation_error` | Fix the arguments (see `details.issues`) and try again. |
+| `review_rejected` | The gateway's pre-send check stopped the message. Read every entry in `details.reasons`, fix exactly those problems (add the missing text, attach the file, remove placeholders, …) and send again. Do not resend unchanged. |
+
+A successful send may include warnings starting with `review:` — the message went out, but the
+reviewer noticed a problem. Mention it to your operator if it matters.
 
 A successful send may include `warnings: ["copy_to_sent_failed"]`: the mail was sent, only the
 copy in your Sent folder is missing. Do not send it again.

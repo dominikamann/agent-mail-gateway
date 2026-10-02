@@ -123,8 +123,8 @@ describe('end to end', () => {
       method: 'POST',
       body: JSON.stringify({
         title: 'Review',
-        start: '2026-10-05T14:00:00Z',
-        end: '2026-10-05T15:00:00Z',
+        start: new Date(Date.now() + 86_400_000).toISOString(),
+        end: new Date(Date.now() + 90_000_000).toISOString(),
         attendees: ['boss@test.local'],
       }),
     });

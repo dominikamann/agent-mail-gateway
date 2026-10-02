@@ -14,6 +14,8 @@ import { Store } from '../../src/store/store.js';
 import { testMailboxConfig } from './config.js';
 import { silentLogger } from './wait.js';
 
+export const TEST_NOW = Date.parse('2026-10-01T00:00:00Z');
+
 export class FakeImap implements ImapMailbox {
   validity = '1';
   connection: ConnectionState = 'connected';
@@ -118,7 +120,9 @@ export function createTestContext(
     smtp,
     store,
     log: silentLogger,
-    now: opts.now ?? (() => Date.now()),
+    // Fixed clock: tests use fixed event dates in October 2026 and must not start failing once
+    // those dates are in the past.
+    now: opts.now ?? (() => TEST_NOW),
   };
   return { ctx, imap, smtp, store };
 }

@@ -49,7 +49,7 @@ describe('sendMessage', () => {
   });
 
   it('decodes attachments and enforces the size limit', async () => {
-    const { ctx, smtp } = createTestContext({ max_attachment_mb: 0.001 });
+    const { ctx, smtp } = createTestContext({ max_attachment_mb: 0.001, review: { rules: 'off' } });
     const small = Buffer.from('abc').toString('base64');
     await sendMessage(
       ctx,
@@ -89,7 +89,10 @@ describe('sendMessage', () => {
 
   it('rate limits per hour (0 = unlimited)', async () => {
     let now = 1_000_000;
-    const { ctx } = createTestContext({ max_sends_per_hour: 2 }, { now: () => now });
+    const { ctx } = createTestContext(
+      { max_sends_per_hour: 2, review: { rules: 'off' } },
+      { now: () => now },
+    );
     await sendMessage(ctx, input());
     now += 1000;
     await sendMessage(ctx, input());
@@ -100,7 +103,7 @@ describe('sendMessage', () => {
     now += 3_600_000;
     await expect(sendMessage(ctx, input())).resolves.toBeTruthy();
 
-    const unlimited = createTestContext({ max_sends_per_hour: 0 }).ctx;
+    const unlimited = createTestContext({ max_sends_per_hour: 0, review: { rules: 'off' } }).ctx;
     for (let i = 0; i < 5; i++) await sendMessage(unlimited, input());
   });
 

@@ -48,6 +48,26 @@ export const mailboxSchema = z
       .object({ sent: z.string().min(1).optional(), trash: z.string().min(1).optional() })
       .strict()
       .prefault({}),
+    review: z
+      .object({
+        rules: z.enum(['block', 'warn', 'off']).default('block'),
+        duplicate_window_minutes: z.coerce.number().int().min(0).default(10),
+        llm: z
+          .object({
+            url: z.url(),
+            model: z.string().min(1),
+            api_key: z.string().min(1).optional(),
+            mode: z.enum(['block', 'warn']).default('warn'),
+            on_error: z.enum(['allow', 'block']).default('allow'),
+            timeout_seconds: z.coerce.number().int().min(1).max(300).default(30),
+            prompt: z.string().min(1).optional(),
+            instructions: z.string().min(1).optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .prefault({}),
     webhook: z
       .object({ url: z.url(), secret: z.string().min(16) })
       .strict()

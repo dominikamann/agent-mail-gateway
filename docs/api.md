@@ -22,6 +22,7 @@ Every error has the same shape:
 | `attachment_too_large` | 413 | Attachments exceed `max_attachment_mb`. |
 | `rate_limited` | 429 | `max_sends_per_hour` reached; see `Retry-After` and `details.retry_after_seconds`. |
 | `send_failed` | 502 | The SMTP server rejected the message. Nothing was sent. |
+| `review_rejected` | 422 | The pre-send review stopped the message; `details.reviewer` is `rules` or `llm`, `details.reasons` lists `{ rule, message }`. Nothing was sent. |
 | `mailbox_unavailable` | 503 | The IMAP server is not reachable right now. |
 
 ## Mailbox

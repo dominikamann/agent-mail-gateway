@@ -7,7 +7,8 @@ export type ErrorCode =
   | 'rate_limited'
   | 'validation_error'
   | 'mailbox_unavailable'
-  | 'send_failed';
+  | 'send_failed'
+  | 'review_rejected';
 
 const STATUS: Record<ErrorCode, number> = {
   unauthorized: 401,
@@ -19,6 +20,7 @@ const STATUS: Record<ErrorCode, number> = {
   validation_error: 400,
   mailbox_unavailable: 503,
   send_failed: 502,
+  review_rejected: 422,
 };
 
 export class GatewayError extends Error {

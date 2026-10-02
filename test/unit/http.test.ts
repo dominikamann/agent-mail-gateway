@@ -124,7 +124,7 @@ describe('messages routes', () => {
   });
 
   it('returns 413 for oversized bodies and 429 with Retry-After', async () => {
-    await setup({ max_attachment_mb: 0.01, max_sends_per_hour: 1 });
+    await setup({ max_attachment_mb: 0.01, max_sends_per_hour: 1, review: { rules: 'off' } });
     const huge = Buffer.alloc(3 * 1024 * 1024).toString('base64');
     const big = await app.inject({
       method: 'POST',

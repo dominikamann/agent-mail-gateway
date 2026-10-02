@@ -70,6 +70,19 @@ mailboxes:
     #   sent: Sent
     #   trash: Trash
 
+    # Check outgoing mail and invitations before sending (see docs/configuration.md).
+    review:
+      # Stage 1, rule-based: block (default) | warn | off
+      rules: block
+      # Same message to the same recipients within this many minutes counts as a duplicate.
+      duplicate_window_minutes: 10
+      # Stage 2, optional LLM review. Remove the comment marks to enable, e.g. with Ollama:
+      # llm:
+      #   url: http://ollama:11434/v1
+      #   model: llama3.1:8b
+      #   mode: warn          # warn (send, report) | block (do not send)
+      #   on_error: allow     # allow (send without review) | block, if the model is unreachable
+
     # Optional: called with a signed POST whenever an allowed message arrives.
     webhook:
       url: https://hermes.example.com/hooks/mail

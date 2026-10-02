@@ -16,7 +16,8 @@ export type AuditAction =
   | 'event_cancel'
   | 'delete'
   | 'filtered_delete'
-  | 'filtered_keep';
+  | 'filtered_keep'
+  | 'review_rejected';
 
 export interface AuditEntry {
   at: number;
@@ -62,6 +63,8 @@ export class Store {
         UNIQUE (mailbox, message_id));
       CREATE TABLE IF NOT EXISTS sends (mailbox TEXT NOT NULL, at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS sends_mailbox_at ON sends (mailbox, at);
+      CREATE TABLE IF NOT EXISTS fingerprints (mailbox TEXT NOT NULL, hash TEXT NOT NULL, at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS fingerprints_lookup ON fingerprints (mailbox, hash, at);
       CREATE TABLE IF NOT EXISTS events (
         id TEXT PRIMARY KEY, mailbox TEXT NOT NULL, created_at INTEGER NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS audit (
@@ -150,6 +153,21 @@ export class Store {
       .prepare('SELECT at FROM sends WHERE mailbox = ? AND at >= ? ORDER BY at')
       .all(mailbox, since) as Row[];
     return rows.map((r) => Number(r.at));
+  }
+
+  recordFingerprint(mailbox: string, hash: string, at: number): void {
+    this.db
+      .prepare('INSERT INTO fingerprints (mailbox, hash, at) VALUES (?, ?, ?)')
+      .run(mailbox, hash, at);
+    this.db.prepare('DELETE FROM fingerprints WHERE at < ?').run(at - 7 * 24 * 3_600_000);
+  }
+
+  hasFingerprintSince(mailbox: string, hash: string, since: number): boolean {
+    return (
+      this.db
+        .prepare('SELECT 1 FROM fingerprints WHERE mailbox = ? AND hash = ? AND at >= ? LIMIT 1')
+        .get(mailbox, hash, since) !== undefined
+    );
   }
 
   saveEvent(rec: EventRecord): void {

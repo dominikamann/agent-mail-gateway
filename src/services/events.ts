@@ -3,6 +3,7 @@ import { buildIcs } from '../calendar/ics.js';
 import { formatInZone, toUtc } from '../calendar/time.js';
 import { GatewayError } from '../errors.js';
 import { isAllowed, normalizeAddress } from '../policy/address.js';
+import { reviewEvent } from '../review/review.js';
 import type { EventRecord } from '../store/store.js';
 import type { MailboxContext } from './context.js';
 import { assertRecipientsAllowed, deliver, releaseSends, reserveSends } from './deliver.js';
@@ -103,6 +104,20 @@ function reachable(ctx: MailboxContext, attendees: string[]): { to: string[]; wa
   return { to, warnings };
 }
 
+function reviewOf(ctx: MailboxContext, r: EventRecord): Promise<string[]> {
+  return reviewEvent(ctx, {
+    attendees: r.attendees,
+    start: new Date(r.start),
+    headerLines: [
+      `Title: ${r.title}`,
+      `When: ${formatInZone(new Date(r.start), r.timezone)} – ${formatInZone(new Date(r.end), r.timezone)}`,
+      ...(r.location ? [`Where: ${r.location}`] : []),
+      `Attendees: ${r.attendees.join(', ')}`,
+    ],
+    description: r.description ?? '',
+  });
+}
+
 function load(ctx: MailboxContext, id: string): EventRecord {
   const r = ctx.store.getEvent(ctx.config.name, id);
   if (!r) throw new GatewayError('not_found', 'Event not found');
@@ -131,7 +146,11 @@ export async function createEvent(ctx: MailboxContext, input: EventInput): Promi
     createdAt: now,
     updatedAt: now,
   };
-  const warnings = await send(ctx, rec, 'REQUEST', attendees, 'Invitation', 'event_create');
+  const reviewWarnings = await reviewOf(ctx, rec);
+  const warnings = [
+    ...reviewWarnings,
+    ...(await send(ctx, rec, 'REQUEST', attendees, 'Invitation', 'event_create')),
+  ];
   ctx.store.saveEvent(rec);
   return view(rec, warnings);
 }
@@ -163,6 +182,7 @@ export async function updateEvent(
     old.attendees.filter((a) => !attendees.includes(a)),
   );
   // Reserve the update and the cancellation together so a parallel send cannot take a slot.
+  const reviewWarnings = await reviewOf(ctx, rec);
   const [requestSlot, cancelSlot] = reserveSends(ctx, removed.to.length > 0 ? 2 : 1);
 
   let warnings: string[];
@@ -181,6 +201,7 @@ export async function updateEvent(
     throw err;
   }
   ctx.store.saveEvent(rec);
+  warnings.unshift(...reviewWarnings);
   warnings.push(...removed.warnings);
   if (removed.to.length > 0) {
     try {

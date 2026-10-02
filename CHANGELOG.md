@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0]
+
+### Added
+
+- Review before sending. Stage 1 (on by default): rules for empty bodies, attachment-only
+  mails, missing subjects, mentioned-but-missing attachments, leftover placeholders, duplicate
+  sends and invitations in the past. Stage 2 (off by default): an LLM reviewer on any
+  OpenAI-compatible endpoint such as Ollama, in `warn` or `block` mode, with a built-in prompt
+  that can be replaced (`prompt`) or extended (`instructions`). Rejections return
+  `review_rejected` (422) with reasons and do not count towards the send limit.
+
 ## [0.1.4]
 
 ### Fixed

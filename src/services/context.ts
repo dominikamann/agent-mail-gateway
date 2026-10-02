@@ -12,6 +12,8 @@ export interface MailboxContext {
   store: Store;
   log: Logger;
   now: () => number;
+  /** HTTP client for the optional LLM review; defaults to the global fetch. */
+  fetch?: typeof fetch;
 }
 
 export function recordAudit(
