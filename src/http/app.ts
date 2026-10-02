@@ -7,6 +7,7 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
+import { registerMcp } from '../mcp/server.js';
 import type { Gateway } from '../services/gateway.js';
 import { VERSION } from '../version.js';
 import { authenticate } from './auth.js';
@@ -54,6 +55,7 @@ export async function buildApp(
     },
     { prefix: '/v1' },
   );
+  registerMcp(app, gateway);
 
   return app;
 }
