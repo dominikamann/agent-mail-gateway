@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { buildIcs } from '../calendar/ics.js';
 import { formatInZone, toUtc } from '../calendar/time.js';
 import { GatewayError } from '../errors.js';
-import { normalizeAddress } from '../policy/address.js';
+import { isAllowed, normalizeAddress } from '../policy/address.js';
 import type { EventRecord } from '../store/store.js';
 import type { MailboxContext } from './context.js';
-import { assertRecipientsAllowed, deliver } from './deliver.js';
+import { assertRecipientsAllowed, assertSendCapacity, deliver } from './deliver.js';
 import type { EventInput, EventPatch } from './schemas.js';
 
 export interface EventView {
@@ -94,6 +94,13 @@ async function send(
   return warnings;
 }
 
+/** Splits attendees into those we may still write to and warnings for the rest. */
+function reachable(ctx: MailboxContext, attendees: string[]): { to: string[]; warnings: string[] } {
+  const to = attendees.filter((a) => isAllowed(a, ctx.config.allow_send_to));
+  const warnings = attendees.filter((a) => !to.includes(a)).map((a) => `cancel_not_sent:${a}`);
+  return { to, warnings };
+}
+
 function load(ctx: MailboxContext, id: string): EventRecord {
   const r = ctx.store.getEvent(ctx.config.name, id);
   if (!r) throw new GatewayError('not_found', 'Event not found');
@@ -149,12 +156,26 @@ export async function updateEvent(
     sequence: old.sequence + 1,
     updatedAt: ctx.now(),
   };
+  const removed = reachable(
+    ctx,
+    old.attendees.filter((a) => !attendees.includes(a)),
+  );
+  assertSendCapacity(ctx, removed.to.length > 0 ? 2 : 1);
+
   const warnings = await send(ctx, rec, 'REQUEST', attendees, 'Updated invitation', 'event_update');
-  const removed = old.attendees.filter((a) => !attendees.includes(a));
-  if (removed.length > 0) {
-    warnings.push(...(await send(ctx, rec, 'CANCEL', removed, 'Cancelled', 'event_cancel')));
-  }
   ctx.store.saveEvent(rec);
+  warnings.push(...removed.warnings);
+  if (removed.to.length > 0) {
+    try {
+      warnings.push(...(await send(ctx, rec, 'CANCEL', removed.to, 'Cancelled', 'event_cancel')));
+    } catch (err) {
+      ctx.log.warn(
+        { mailbox: ctx.config.name, err: (err as Error).message },
+        'cancel to removed attendees failed',
+      );
+      warnings.push('cancel_failed');
+    }
+  }
   return view(rec, warnings);
 }
 
@@ -166,7 +187,10 @@ export async function cancelEvent(ctx: MailboxContext, id: string): Promise<Even
     sequence: old.sequence + 1,
     updatedAt: ctx.now(),
   };
-  const warnings = await send(ctx, rec, 'CANCEL', rec.attendees, 'Cancelled', 'event_cancel');
+  const { to, warnings } = reachable(ctx, rec.attendees);
+  if (to.length > 0) {
+    warnings.push(...(await send(ctx, rec, 'CANCEL', to, 'Cancelled', 'event_cancel')));
+  }
   ctx.store.saveEvent(rec);
   return view(rec, warnings);
 }

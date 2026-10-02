@@ -1,5 +1,5 @@
 import { encodeMessageId } from '../mail/ids.js';
-import { parseMessage } from '../mail/parse.js';
+import { parseHeaders, parseMessage } from '../mail/parse.js';
 import { decideInbound } from '../policy/inbound.js';
 import { type MailboxContext, recordAudit } from '../services/context.js';
 
@@ -58,7 +58,7 @@ export class InboundWatcher {
 
     if (!state || state.uidValidity !== validity) {
       const all = await imap.search({});
-      const max = all.length > 0 ? Math.max(...all) : 0;
+      const max = all[all.length - 1] ?? 0;
       store.setWatcherState(config.name, validity, max);
       this.ctx.log.info(
         { mailbox: config.name, uidValidity: validity, lastUid: max },
@@ -71,7 +71,15 @@ export class InboundWatcher {
     for (let i = 0; i < fresh.length; i += BATCH) {
       const fetched = await imap.fetch(fresh.slice(i, i + BATCH));
       for (const msg of fetched) {
-        await this.handle(validity, msg.uid, msg.raw);
+        try {
+          await this.handle(validity, msg.uid, msg.raw);
+        } catch (err) {
+          if (imap.state() !== 'connected') throw err;
+          this.ctx.log.error(
+            { mailbox: config.name, uid: msg.uid, err: (err as Error).message },
+            'could not process message, skipping it',
+          );
+        }
         store.setWatcherState(config.name, validity, msg.uid);
       }
     }
@@ -79,9 +87,9 @@ export class InboundWatcher {
 
   private async handle(validity: string, uid: number, raw: Buffer): Promise<void> {
     const { config, imap, store } = this.ctx;
-    const parsed = await parseMessage(raw);
-    const decision = decideInbound(config, parsed);
-    const counterparts = parsed.from ? [parsed.from] : [];
+    const headers = await parseHeaders(raw);
+    const decision = decideInbound(config, headers);
+    const counterparts = headers.from ? [headers.from] : [];
 
     if (!decision.allowed) {
       if (decision.reason === 'sender_auth_missing') {
@@ -100,6 +108,7 @@ export class InboundWatcher {
     }
 
     if (config.webhook) {
+      const parsed = await parseMessage(raw);
       const id = encodeMessageId(validity, uid);
       const payload = JSON.stringify({
         event: 'message.received',

@@ -136,8 +136,13 @@ export class Store {
     return row ? { status: String(row.status), attempts: Number(row.attempts) } : null;
   }
 
-  recordSend(mailbox: string, at: number): void {
-    this.db.prepare('INSERT INTO sends (mailbox, at) VALUES (?, ?)').run(mailbox, at);
+  recordSend(mailbox: string, at: number): number {
+    const res = this.db.prepare('INSERT INTO sends (mailbox, at) VALUES (?, ?)').run(mailbox, at);
+    return Number(res.lastInsertRowid);
+  }
+
+  deleteSend(id: number): void {
+    this.db.prepare('DELETE FROM sends WHERE rowid = ?').run(id);
   }
 
   sendsSince(mailbox: string, since: number): number[] {

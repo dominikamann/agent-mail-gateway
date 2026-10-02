@@ -38,7 +38,14 @@ export function evaluateSenderAuth(headers: string[], fromAddress: string): Send
   const entries = parseHeader(top);
 
   const dmarc = entries.filter((e) => e.method === 'dmarc');
-  if (dmarc.length > 0) return dmarc.every((e) => e.result === 'pass') ? 'pass' : 'fail';
+  if (dmarc.length > 0) {
+    const ok = dmarc.every(
+      (e) =>
+        e.result === 'pass' &&
+        (e.props['header.from'] === undefined || e.props['header.from'] === fromDomain),
+    );
+    return ok ? 'pass' : 'fail';
+  }
 
   const dkimPass = entries.some(
     (e) => e.method === 'dkim' && e.result === 'pass' && aligned(e.props['header.d'], fromDomain),

@@ -1,6 +1,6 @@
 import { GatewayError } from '../errors.js';
 import { decodeMessageId, encodeMessageId } from '../mail/ids.js';
-import { type ParsedMessage, parseMessage } from '../mail/parse.js';
+import { type ParsedMessage, parseHeaders, parseMessage } from '../mail/parse.js';
 import { decideInbound } from '../policy/inbound.js';
 import { type MailboxContext, recordAudit } from './context.js';
 
@@ -79,8 +79,17 @@ export async function listMessages(
     const fetched = (await ctx.imap.fetch(batch)).sort((a, b) => b.uid - a.uid);
     for (const f of fetched) {
       lastUid = f.uid;
-      const parsed = await parseMessage(f.raw);
-      if (!decideInbound(ctx.config, parsed).allowed) continue;
+      if (!decideInbound(ctx.config, await parseHeaders(f.raw)).allowed) continue;
+      let parsed: ParsedMessage;
+      try {
+        parsed = await parseMessage(f.raw);
+      } catch (err) {
+        ctx.log.warn(
+          { mailbox: ctx.config.name, uid: f.uid, err: (err as Error).message },
+          'unparsable message skipped',
+        );
+        continue;
+      }
       messages.push(summary(encodeMessageId(validity, f.uid), parsed, f.seen));
       if (messages.length === q.limit) break;
     }
@@ -100,8 +109,8 @@ export async function loadAllowed(
   if (decoded.uidValidity !== validity) throw notFound();
   const [fetched] = await ctx.imap.fetch([decoded.uid]);
   if (!fetched) throw notFound();
+  if (!decideInbound(ctx.config, await parseHeaders(fetched.raw)).allowed) throw notFound();
   const parsed = await parseMessage(fetched.raw);
-  if (!decideInbound(ctx.config, parsed).allowed) throw notFound();
   return { uid: fetched.uid, seen: fetched.seen, parsed };
 }
 

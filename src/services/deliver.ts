@@ -28,12 +28,13 @@ export function assertRecipientsAllowed(ctx: MailboxContext, addresses: string[]
   }
 }
 
-function assertRateLimit(ctx: MailboxContext): void {
+/** Throws rate_limited unless `needed` more sends fit into the rolling hour. */
+export function assertSendCapacity(ctx: MailboxContext, needed = 1): void {
   const limit = ctx.config.max_sends_per_hour;
   if (limit === 0) return;
   const now = ctx.now();
   const recent = ctx.store.sendsSince(ctx.config.name, now - HOUR_MS + 1);
-  if (recent.length >= limit) {
+  if (recent.length + needed > limit) {
     const retryAfterMs = recent[0]! + HOUR_MS - now;
     throw new GatewayError('rate_limited', `Send limit of ${limit} per hour reached`, {
       retry_after_seconds: Math.max(1, Math.ceil(retryAfterMs / 1000)),
@@ -50,29 +51,38 @@ export async function deliver(
     ...new Set([...input.to, ...input.cc, ...input.bcc].map((a) => a.toLowerCase())),
   ];
   assertRecipientsAllowed(ctx, recipients);
-  assertRateLimit(ctx);
+  // Check and reserve the slot synchronously so parallel requests cannot overshoot the limit.
+  assertSendCapacity(ctx);
+  const reservation = ctx.store.recordSend(ctx.config.name, ctx.now());
 
-  const { raw, messageId } = await composeMail({
-    from: ctx.config.address,
-    to: input.to,
-    cc: input.cc,
-    bcc: input.bcc,
-    subject: input.subject,
-    html: markdownToHtml(input.markdown),
-    text: input.markdown,
-    inReplyTo: input.inReplyTo,
-    references: input.references,
-    attachments: input.attachments,
-    icalEvent: input.icalEvent,
-  });
+  let composed: { raw: Buffer; messageId: string };
+  try {
+    composed = await composeMail({
+      from: ctx.config.address,
+      to: input.to,
+      cc: input.cc,
+      bcc: input.bcc,
+      subject: input.subject,
+      html: markdownToHtml(input.markdown),
+      text: input.markdown,
+      inReplyTo: input.inReplyTo,
+      references: input.references,
+      attachments: input.attachments,
+      icalEvent: input.icalEvent,
+    });
+  } catch (err) {
+    ctx.store.deleteSend(reservation);
+    throw err;
+  }
+  const { raw, messageId } = composed;
 
   try {
     await ctx.smtp.send({ from: ctx.config.address, to: recipients }, raw);
   } catch (err) {
+    ctx.store.deleteSend(reservation);
     recordAudit(ctx, action, recipients, 'error', (err as Error).message);
     throw new GatewayError('send_failed', 'The mail server did not accept the message');
   }
-  ctx.store.recordSend(ctx.config.name, ctx.now());
 
   const warnings: string[] = [];
   try {
