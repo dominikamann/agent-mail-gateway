@@ -18,6 +18,7 @@ All notable changes to this project are documented here. The format follows
 - REST API with OpenAPI docs, MCP server over Streamable HTTP.
 - Signed webhooks with persistent retries; IMAP IDLE with polling fallback.
 - Send rate limit, audit log, health endpoint, Docker image.
+- Hermes Agent plugin with the `agent-mail` skill.
 
 ### Hardening
 

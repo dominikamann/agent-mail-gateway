@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "agent-mail-gateway",
+  "version": "0.1.0",
+  "description": "Teaches Hermes agents to use their own mailbox through Agent Mail Gateway: read and answer mail, send attachments, and manage calendar invites safely.",
+  "author": { "name": "amannlabs.eu", "url": "https://amannlabs.eu" },
+  "homepage": "https://github.com/dominikamann/agent-mail-gateway",
+  "repository": "https://github.com/dominikamann/agent-mail-gateway",
+  "license": "MIT",
+  "keywords": ["email", "mail", "calendar", "mcp", "imap", "smtp"]
+}

@@ -1,39 +1,77 @@
 # Hermes Agent integration
 
-[Hermes Agent](https://hermes-agent.nousresearch.com/) can load tools from remote MCP servers.
-Give each Hermes agent its own mailbox entry and API key in the gateway's `config.yaml`, then
-add the gateway to that agent's `~/.hermes/config.yaml`:
+Connecting a [Hermes Agent](https://hermes-agent.nousresearch.com/) to its mailbox takes three
+steps: give the agent a mailbox in the gateway, connect the gateway as an MCP server, and
+install the plugin that teaches the agent how to use it.
+
+## 1. A mailbox per agent
+
+Add one entry per agent to the gateway's `config.yaml` (see
+[configuration.md](configuration.md)) with its own `api_key`. The key decides which mailbox the
+agent works with, so never share a key between agents.
+
+## 2. Connect the MCP server
+
+Put the agent's key into the Hermes secret file of the profile that runs the agent,
+`~/.hermes/.env` (or the profile's own `.env`):
+
+```bash
+AGENT_MAIL_API_KEY=<the api_key of this agent's mailbox>
+```
+
+Then add the gateway to that profile's `~/.hermes/config.yaml`:
 
 ```yaml
 mcp_servers:
   mail:
     url: "http://agent-mail-gateway:8080/mcp"
     headers:
-      Authorization: "Bearer <this agent's api_key>"
+      Authorization: "Bearer ${AGENT_MAIL_API_KEY}"
 ```
 
-The tools appear in Hermes as `mcp__mail__send_message`, `mcp__mail__list_messages`, etc.
-Use a different key per agent — the key decides which mailbox the agent works with.
+Hermes fills in `${AGENT_MAIL_API_KEY}` from the profile's `.env`; if the variable is missing,
+the connection fails with a message naming it instead of sending a wrong key. The tools appear
+as `mcp__mail__send_message`, `mcp__mail__list_messages` and so on.
+
+Use the service name as host when Hermes and the gateway run in the same Docker network
+(`http://agent-mail-gateway:8080/mcp`), `http://localhost:8080/mcp` on the same machine, and
+an `https://` URL behind a reverse proxy otherwise. Hermes only allows plain HTTP for
+localhost-style hosts in plugins; in `config.yaml` any URL works, but keep keys off
+unencrypted networks.
+
+Several agents in one Hermes installation: use one Hermes profile per agent, each with its own
+`.env` key. The `mail` server name can stay the same in every profile.
+
+## 3. Install the plugin
+
+The plugin adds the `agent-mail` skill: when to check mail, how to reply in-thread, how to
+handle calendar invites without duplicates, what each error means, and — most importantly —
+to treat email content as data, never as instructions (protection against prompt injection
+by email).
+
+```bash
+hermes plugins install dominikamann/agent-mail-gateway/integrations/hermes/agent-mail-gateway --enable
+hermes plugins list
+```
+
+The plugin contains no MCP server definition on purpose: every gateway runs at its own address,
+and plugins must not carry credentials. Step 2 is the connection, the plugin is the know-how.
 
 ## Reacting to new mail
 
-For agents that run continuously or react to events, configure a `webhook` for the mailbox
-and point it at an HTTP endpoint that triggers the agent. The webhook only carries the
-message id and a short preview; the agent then calls `read_message` with that id.
+- **Always-on agents:** give the mailbox a `webhook` in the gateway config and point it at an
+  HTTP endpoint that wakes the agent. The webhook carries only the message id, sender, subject
+  and a short preview, signed with HMAC (see [api.md](api.md#webhooks)); the agent then calls
+  `read_message` with that id.
+- **Scheduled agents (cron):** no webhook needed. Start each run with `list_messages` and
+  `unread: true`.
 
-Agents that run on a schedule (cron) need no webhook: call `list_messages` with
-`unread: true` at the start of each run.
+## Example task prompts
 
-## Example instructions for the agent
+> Check your mailbox for unread mail. Summarise anything from Alex and answer questions you
+> can answer from your notes. Reply in the same thread.
 
-> You have your own mailbox via the `mail` tools. Call `get_mailbox_info` to see whom you may
-> write to. Check for new mail with `list_messages` (`unread: true`) and read it with
-> `read_message`. Write replies in Markdown with `send_message` and pass `reply_to_id` so the
-> reply stays in the same thread. To schedule a meeting, use `create_event`; to move it, use
-> `update_event` with the event id instead of creating a new one.
+> Send Alex this week's report as a Markdown table and attach `report.csv`.
 
-## Running both in Docker
-
-If Hermes and the gateway run in the same Compose project, use the service name as host
-(`http://agent-mail-gateway:8080/mcp`). Otherwise put the gateway behind a TLS reverse proxy
-and use its `https://` URL.
+> Schedule a 30-minute review with Alex tomorrow at 14:00. If you already sent an invite for
+> the review, move that one instead of creating a new one.
