@@ -83,7 +83,23 @@ platforms:
             New email in your mailbox from {message.from}: "{message.subject}"
             Preview: {message.preview}
             Read it with read_message (id {message.id}) and handle it.
+          # Where the agent's answer goes. Without `deliver` it only lands in the Hermes log:
+          # the agent still handles the mail (and can reply by email), but no person sees it.
+          deliver: matrix            # or telegram, slack, discord, signal, email, ...
+          deliver_extra:
+            chat_id: "!roomid:matrix.example.org"   # optional; default is the platform's home channel
 ```
+
+The webhook URL is always `http://<hermes-host>:8644/webhooks/<route name>` — note the
+`/webhooks/` prefix. The target platform (Matrix in this example) must be enabled in the same
+Hermes gateway.
+
+**Alternative: trigger an existing cron job.** If you already have a scheduled mail job (for
+example a daily "check the mailbox" run with its own delivery settings), let the webhook start
+that job instead of a fresh run: replace `deliver`/`deliver_extra` with `cron_job: <job id or
+name>`. The rendered `prompt` is passed to the job as extra context, and the job's own skills,
+model and delivery apply. A nice side effect: the daily schedule remains a safety net if a
+webhook is ever missed.
 
 Then point the mailbox at it in the gateway's `config.yaml`:
 
