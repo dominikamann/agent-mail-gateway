@@ -16,30 +16,30 @@ mailboxes:
   - # Short identifier: lowercase letters, digits, _ or -. Used in logs and webhook payloads.
     name: assistant
     # The mailbox's email address. Mail is sent with this From address.
-    address: agent@example.com
+    address: youragent@yourmailserver.eu
     # The key the agent sends as "Authorization: Bearer <key>". At least 32 characters, unique.
     api_key: ${AGENT_API_KEY}
 
     # Incoming mail server. security: tls (usually port 993), starttls (usually 143),
     # or none (plain text, only for local testing).
-    imap: { host: mail.example.com, port: 993, security: tls }
+    imap: { host: mail.yourmailserver.eu, port: 993, security: tls }
     # Outgoing mail server. security: tls (usually port 465) or starttls (usually 587).
-    smtp: { host: mail.example.com, port: 465, security: tls }
+    smtp: { host: mail.yourmailserver.eu, port: 465, security: tls }
     # Login for both IMAP and SMTP.
-    username: agent@example.com
+    username: youragent@yourmailserver.eu
     password: ${AGENT_MAIL_PASSWORD}
 
     # Who the agent may receive mail from. Exact addresses or "*@domain" (that exact domain,
     # no subdomains). Case does not matter. Mail from anyone else is never shown to the agent.
     # Empty list: the agent sees no mail at all.
     allow_receive_from:
-      - you@example.net
-      - "*@example.org"
+      - you@yourmailserver.eu
+      - "*@yourcompany.eu"
     # Who the agent may send mail and calendar invites to. Same pattern rules.
     # If any recipient (to, cc, bcc, attendee) is not listed, the whole request is rejected.
     # Empty list: the agent cannot send.
     allow_send_to:
-      - you@example.net
+      - you@yourmailserver.eu
 
     # What happens to mail from senders that are not allowed:
     #   delete - moved to the Trash folder (deleted permanently if the server has no Trash)

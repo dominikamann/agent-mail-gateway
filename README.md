@@ -94,7 +94,7 @@ Every option is explained in [docs/configuration.md](docs/configuration.md).
 ```bash
 curl -X POST http://localhost:8080/v1/messages \
   -H "Authorization: Bearer $AGENT_API_KEY" -H "Content-Type: application/json" \
-  -d '{"to":["you@example.net"],"subject":"Daily report","body_markdown":"All **green** today."}'
+  -d '{"to":["you@yourmailserver.eu"],"subject":"Daily report","body_markdown":"All **green** today."}'
 ```
 
 Read new mail:

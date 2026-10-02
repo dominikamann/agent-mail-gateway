@@ -30,9 +30,9 @@ Every error has the same shape:
 
 ```json
 {
-  "address": "agent@example.com",
-  "allow_receive_from": ["you@example.net"],
-  "allow_send_to": ["you@example.net"],
+  "address": "youragent@yourmailserver.eu",
+  "allow_receive_from": ["you@yourmailserver.eu"],
+  "allow_send_to": ["you@yourmailserver.eu"],
   "allow_delete": false,
   "max_sends_per_hour": 30,
   "max_attachment_mb": 15,
@@ -53,9 +53,9 @@ date-time; without an offset it is read in the mailbox `timezone`), `limit` (1�
   "messages": [
     {
       "id": "1712345678-42",
-      "from": "you@example.net",
+      "from": "you@yourmailserver.eu",
       "from_name": "Alex",
-      "to": ["agent@example.com"],
+      "to": ["youragent@yourmailserver.eu"],
       "cc": [],
       "subject": "Report",
       "date": "2026-10-02T08:15:00.000Z",
@@ -92,7 +92,7 @@ Moves the message to Trash. Requires `allow_delete: true`.
 
 ```json
 {
-  "to": ["you@example.net"],
+  "to": ["you@yourmailserver.eu"],
   "cc": [],
   "bcc": [],
   "subject": "Weekly numbers",
@@ -103,7 +103,7 @@ Moves the message to Trash. Requires `allow_delete: true`.
 ```
 
 `reply_to_id` threads the reply (sets `In-Reply-To`/`References`, prefixes `Re:`).
-Response: `{ "message_id": "<…@example.com>", "warnings": [] }`. The warning
+Response: `{ "message_id": "<…@yourmailserver.eu>", "warnings": [] }`. The warning
 `copy_to_sent_failed` means the message was sent but could not be stored in Sent.
 
 ## Calendar events
@@ -118,7 +118,7 @@ Response: `{ "message_id": "<…@example.com>", "warnings": [] }`. The warning
   "timezone": "Europe/Berlin",
   "location": "Office",
   "description_markdown": "Agenda: …",
-  "attendees": ["you@example.net"]
+  "attendees": ["you@yourmailserver.eu"]
 }
 ```
 
@@ -154,7 +154,7 @@ Content-Type: application/json
 X-Gateway-Timestamp: 1790960000
 X-Gateway-Signature: sha256=5d1f…
 
-{"event":"message.received","mailbox":"assistant","message":{"id":"1712345678-42","from":"you@example.net","subject":"Report","date":"2026-10-02T08:15:00.000Z","preview":"Please send…"}}
+{"event":"message.received","mailbox":"assistant","message":{"id":"1712345678-42","from":"you@yourmailserver.eu","subject":"Report","date":"2026-10-02T08:15:00.000Z","preview":"Please send…"}}
 ```
 
 The body is not included — fetch it with `GET /v1/messages/{id}` using the agent's key.

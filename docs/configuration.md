@@ -56,17 +56,17 @@ must be set and non-empty.
 Example for a Plesk mailbox (IMAP 993, SMTP 465):
 
 ```yaml
-imap: { host: mail.example.com, port: 993, security: tls }
-smtp: { host: mail.example.com, port: 465, security: tls }
+imap: { host: mail.yourmailserver.eu, port: 993, security: tls }
+smtp: { host: mail.yourmailserver.eu, port: 465, security: tls }
 ```
 
 POP3 is not supported: it cannot mark mail as read or move it reliably.
 
 ### Allow lists
 
-Each entry is either an exact address (`you@example.net`) or a whole domain
-(`*@example.org`). Domain entries match that exact domain only — `*@example.org` does not
-match `a@mail.example.org`. Matching ignores case. An empty list allows nothing.
+Each entry is either an exact address (`you@yourmailserver.eu`) or a whole domain
+(`*@yourcompany.eu`). Domain entries match that exact domain only — `*@yourcompany.eu` does not
+match `a@mail.yourcompany.eu`. Matching ignores case. An empty list allows nothing.
 
 When sending, **every** recipient in `to`, `cc`, `bcc` (and every event attendee) must match
 `allow_send_to`; otherwise the whole request is rejected with `recipient_not_allowed` and
