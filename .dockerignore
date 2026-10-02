@@ -1,0 +1,11 @@
+node_modules
+dist
+coverage
+data
+docs
+test
+.git
+.github
+.superpowers
+.env
+config.yaml

@@ -1,0 +1,14 @@
+services:
+  agent-mail-gateway:
+    image: ghcr.io/dominikamann/agent-mail-gateway:latest
+    # build: .   # use this instead of image to build from source
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file: .env
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+      - gateway-data:/data
+
+volumes:
+  gateway-data:
