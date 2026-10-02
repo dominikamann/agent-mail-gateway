@@ -4,8 +4,10 @@ import type {
   ConnectionState,
   FetchedMessage,
   ImapMailbox,
+  MessageMeta,
   SearchQuery,
 } from '../../src/mail/imap.js';
+import { headerBlock } from '../../src/mail/parse.js';
 import type { SmtpSender } from '../../src/mail/smtp.js';
 import type { MailboxContext } from '../../src/services/context.js';
 import { Store } from '../../src/store/store.js';
@@ -16,7 +18,9 @@ export class FakeImap implements ImapMailbox {
   validity = '1';
   connection: ConnectionState = 'connected';
   failAppend = false;
-  messages: { uid: number; raw: Buffer; seen: boolean }[] = [];
+  messages: { uid: number; raw: Buffer; seen: boolean; internalDate?: Date }[] = [];
+  /** UIDs whose full source was downloaded, in order. */
+  fullFetches: number[] = [];
   trash: Buffer[] = [];
   sent: Buffer[] = [];
   private nextUid = 1;
@@ -34,9 +38,9 @@ export class FakeImap implements ImapMailbox {
       if (i >= 0) this.listeners.splice(i, 1);
     };
   }
-  add(raw: Buffer, seen = false): number {
+  add(raw: Buffer, seen = false, internalDate = new Date()): number {
     const uid = this.nextUid++;
-    this.messages.push({ uid, raw, seen });
+    this.messages.push({ uid, raw, seen, internalDate });
     for (const l of this.listeners) l();
     return uid;
   }
@@ -55,9 +59,25 @@ export class FakeImap implements ImapMailbox {
       .filter((m) => (!q.unread || !m.seen) && (q.uidAbove === undefined || m.uid > q.uidAbove))
       .map((m) => m.uid);
   }
+  async fetchMeta(uids: number[]): Promise<MessageMeta[]> {
+    this.ensure();
+    return this.messages
+      .filter((m) => uids.includes(m.uid))
+      .map((m) => ({
+        uid: m.uid,
+        header: headerBlock(m.raw),
+        seen: m.seen,
+        size: m.raw.length,
+        internalDate: m.internalDate ?? null,
+        hasAttachments: /content-disposition:\s*attachment/i.test(m.raw.toString('latin1')),
+      }));
+  }
   async fetch(uids: number[]): Promise<FetchedMessage[]> {
     this.ensure();
-    return this.messages.filter((m) => uids.includes(m.uid)).map((m) => ({ ...m }));
+    this.fullFetches.push(...uids);
+    return this.messages
+      .filter((m) => uids.includes(m.uid))
+      .map((m) => ({ uid: m.uid, raw: m.raw, seen: m.seen }));
   }
   async setSeen(uid: number, seen: boolean) {
     this.ensure();

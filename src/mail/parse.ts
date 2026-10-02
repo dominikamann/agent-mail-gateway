@@ -62,12 +62,25 @@ function headersOf(parsed: Parsed): ParsedHeaders {
   };
 }
 
-/** Parses only the header block, so policy can be decided without touching the body. */
-export async function parseHeaders(raw: Buffer): Promise<ParsedHeaders> {
+/** Returns only the header block of a raw message (or the input if it has no body). */
+export function headerBlock(raw: Buffer): Buffer {
   let end = raw.indexOf('\r\n\r\n');
   if (end < 0) end = raw.indexOf('\n\n');
-  const head = end < 0 ? raw : Buffer.concat([raw.subarray(0, end), Buffer.from('\r\n\r\n')]);
-  return headersOf(await simpleParser(head, { skipHtmlToText: true, skipTextToHtml: true }));
+  return end < 0 ? raw : raw.subarray(0, end);
+}
+
+/**
+ * Parses only the header block, so policy can be decided without touching the body.
+ * Returns null for headers that cannot be parsed (e.g. oversized); callers treat that as
+ * not allowed.
+ */
+export async function parseHeaders(rawOrHeader: Buffer): Promise<ParsedHeaders | null> {
+  try {
+    const head = Buffer.concat([headerBlock(rawOrHeader), Buffer.from('\r\n\r\n')]);
+    return headersOf(await simpleParser(head, { skipHtmlToText: true, skipTextToHtml: true }));
+  } catch {
+    return null;
+  }
 }
 
 export async function parseMessage(raw: Buffer): Promise<ParsedMessage> {

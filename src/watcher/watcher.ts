@@ -1,7 +1,9 @@
 import { encodeMessageId } from '../mail/ids.js';
-import { parseHeaders, parseMessage } from '../mail/parse.js';
+import type { MessageMeta } from '../mail/imap.js';
+import { parseHeaders } from '../mail/parse.js';
 import { decideInbound } from '../policy/inbound.js';
 import { type MailboxContext, recordAudit } from '../services/context.js';
+import { parseForSummary } from '../services/messages.js';
 
 const BATCH = 20;
 
@@ -74,10 +76,11 @@ export class InboundWatcher {
 
     const fresh = await imap.search({ uidAbove: state.lastUid });
     for (let i = 0; i < fresh.length; i += BATCH) {
-      const fetched = await imap.fetch(fresh.slice(i, i + BATCH));
-      for (const msg of fetched) {
+      // Headers only: blocked mail is never downloaded.
+      const metas = await imap.fetchMeta(fresh.slice(i, i + BATCH));
+      for (const msg of metas) {
         try {
-          await this.handle(validity, msg.uid, msg.raw);
+          await this.handle(validity, msg);
         } catch (err) {
           if (imap.state() !== 'connected') throw err;
           this.ctx.log.error(
@@ -90,11 +93,12 @@ export class InboundWatcher {
     }
   }
 
-  private async handle(validity: string, uid: number, raw: Buffer): Promise<void> {
+  private async handle(validity: string, meta: MessageMeta): Promise<void> {
     const { config, imap, store } = this.ctx;
-    const headers = await parseHeaders(raw);
+    const uid = meta.uid;
+    const headers = await parseHeaders(meta.header);
     const decision = decideInbound(config, headers);
-    const counterparts = headers.from ? [headers.from] : [];
+    const counterparts = headers?.from ? [headers.from] : [];
 
     if (!decision.allowed) {
       if (decision.reason === 'sender_auth_missing') {
@@ -113,7 +117,7 @@ export class InboundWatcher {
     }
 
     if (config.webhook) {
-      const parsed = await parseMessage(raw);
+      const parsed = await parseForSummary(this.ctx, meta);
       const id = encodeMessageId(validity, uid);
       const payload = JSON.stringify({
         event: 'message.received',

@@ -5,7 +5,7 @@ import { GatewayError } from '../errors.js';
 import { isAllowed, normalizeAddress } from '../policy/address.js';
 import type { EventRecord } from '../store/store.js';
 import type { MailboxContext } from './context.js';
-import { assertRecipientsAllowed, assertSendCapacity, deliver } from './deliver.js';
+import { assertRecipientsAllowed, deliver, releaseSends, reserveSends } from './deliver.js';
 import type { EventInput, EventPatch } from './schemas.js';
 
 export interface EventView {
@@ -65,6 +65,7 @@ async function send(
   recipients: string[],
   subjectPrefix: string,
   action: 'event_create' | 'event_update' | 'event_cancel',
+  reserved?: number,
 ): Promise<string[]> {
   const content = buildIcs({
     uid: r.uid,
@@ -90,6 +91,7 @@ async function send(
       icalEvent: { method, content },
     },
     action,
+    reserved,
   );
   return warnings;
 }
@@ -160,14 +162,31 @@ export async function updateEvent(
     ctx,
     old.attendees.filter((a) => !attendees.includes(a)),
   );
-  assertSendCapacity(ctx, removed.to.length > 0 ? 2 : 1);
+  // Reserve the update and the cancellation together so a parallel send cannot take a slot.
+  const [requestSlot, cancelSlot] = reserveSends(ctx, removed.to.length > 0 ? 2 : 1);
 
-  const warnings = await send(ctx, rec, 'REQUEST', attendees, 'Updated invitation', 'event_update');
+  let warnings: string[];
+  try {
+    warnings = await send(
+      ctx,
+      rec,
+      'REQUEST',
+      attendees,
+      'Updated invitation',
+      'event_update',
+      requestSlot,
+    );
+  } catch (err) {
+    releaseSends(ctx, [cancelSlot]);
+    throw err;
+  }
   ctx.store.saveEvent(rec);
   warnings.push(...removed.warnings);
   if (removed.to.length > 0) {
     try {
-      warnings.push(...(await send(ctx, rec, 'CANCEL', removed.to, 'Cancelled', 'event_cancel')));
+      warnings.push(
+        ...(await send(ctx, rec, 'CANCEL', removed.to, 'Cancelled', 'event_cancel', cancelSlot)),
+      );
     } catch (err) {
       ctx.log.warn(
         { mailbox: ctx.config.name, err: (err as Error).message },

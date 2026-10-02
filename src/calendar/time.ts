@@ -27,14 +27,31 @@ function offsetMs(date: Date, timeZone: string): number {
   return wall - Math.floor(date.getTime() / 1000) * 1000;
 }
 
+/** Rejects dates like 2026-02-30 or 25:61 that JavaScript would silently roll over. */
+function assertRealDateTime(input: string): void {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(input);
+  if (!m) throw new GatewayError('validation_error', `Not an ISO 8601 date-time: ${input}`);
+  const [y, mo, d, h, mi, s] = m.slice(1).map((v) => Number(v ?? 0)) as number[];
+  const date = new Date(Date.UTC(y!, mo! - 1, d!, h!, mi!, s!));
+  const real =
+    date.getUTCFullYear() === y &&
+    date.getUTCMonth() === mo! - 1 &&
+    date.getUTCDate() === d &&
+    date.getUTCHours() === h &&
+    date.getUTCMinutes() === mi &&
+    date.getUTCSeconds() === s;
+  if (!real) throw new GatewayError('validation_error', `Not a valid date-time: ${input}`);
+}
+
 export function toUtc(input: string, timeZone: string): Date {
   if (!isValidTimeZone(timeZone)) {
     throw new GatewayError('validation_error', `Unknown time zone: ${timeZone}`);
   }
-  if (WITH_OFFSET.test(input)) return new Date(input);
-  if (!LOCAL.test(input)) {
+  if (!WITH_OFFSET.test(input) && !LOCAL.test(input)) {
     throw new GatewayError('validation_error', `Not an ISO 8601 date-time: ${input}`);
   }
+  assertRealDateTime(input);
+  if (WITH_OFFSET.test(input)) return new Date(input);
   const asUtc = new Date(`${input}Z`);
   const first = offsetMs(asUtc, timeZone);
   const guess = new Date(asUtc.getTime() - first);

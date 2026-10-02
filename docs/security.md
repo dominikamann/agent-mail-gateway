@@ -24,7 +24,10 @@
 - **No secrets or content in logs.** Passwords, API keys, webhook secrets, message bodies and
   attachments are never logged. The audit log records time, mailbox, action, counterpart
   addresses and result.
-- **Signed webhooks** (HMAC-SHA256 with timestamp) that carry no message body.
+- **Signed webhooks** (HMAC-SHA256 with timestamp) that carry only the message id, sender,
+  subject, date and a 200-character preview — never the full body or attachments.
+- **Blocked mail is never downloaded.** Policy is decided on the headers alone; bodies of
+  filtered messages are not fetched, and messages with unparsable headers count as filtered.
 
 ## Sender spoofing
 

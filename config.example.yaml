@@ -50,6 +50,9 @@ mailboxes:
     # Authentication-Results header your mail server adds. Protects against forged senders.
     # Set to false if your server does not add that header. Default: true
     require_sender_auth: true
+    # Optional, recommended: only trust Authentication-Results written by this server (the name
+    # at the start of the header your server adds, e.g. "mail.yourmailserver.eu; dmarc=pass ...").
+    # trusted_authserv_id: mail.yourmailserver.eu
     # Allow the agent to move received mail to Trash. Default: false
     allow_delete: false
     # Maximum number of sent messages (including calendar invites) per rolling hour.

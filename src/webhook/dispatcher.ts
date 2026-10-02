@@ -9,6 +9,7 @@ export const RETRY_DELAYS_MS = [10_000, 60_000, 300_000, 900_000, 1_800_000];
 export class WebhookDispatcher {
   private timer: NodeJS.Timeout | null = null;
   private inflight: Promise<void> | null = null;
+  private stopping = false;
   private readonly fetchFn: typeof fetch;
   private readonly now: () => number;
 
@@ -26,12 +27,14 @@ export class WebhookDispatcher {
   }
 
   start(intervalMs = 2000): void {
+    this.stopping = false;
     this.timer = setInterval(() => void this.runOnce(), intervalMs);
     this.timer.unref();
   }
 
   /** Stops the timer and resolves once a delivery in progress has been recorded. */
   async stop(): Promise<void> {
+    this.stopping = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     await this.inflight;
@@ -49,7 +52,10 @@ export class WebhookDispatcher {
 
   private async dispatchDue(): Promise<void> {
     try {
-      for (const job of this.deps.store.dueWebhooks(this.now())) await this.deliver(job);
+      for (const job of this.deps.store.dueWebhooks(this.now())) {
+        if (this.stopping) break;
+        await this.deliver(job);
+      }
     } catch (err) {
       this.deps.log.error({ err: (err as Error).message }, 'webhook dispatch failed');
     }

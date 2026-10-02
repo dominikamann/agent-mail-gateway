@@ -19,7 +19,15 @@ export async function startGateway(
 ): Promise<{ app: FastifyInstance; gateway: Gateway; stop(): Promise<void> }> {
   const log = pino({
     level: config.server.log_level,
-    redact: ['*.password', '*.api_key', '*.secret', 'req.headers.authorization'],
+    redact: [
+      'password',
+      'api_key',
+      'secret',
+      '*.password',
+      '*.api_key',
+      '*.secret',
+      'req.headers.authorization',
+    ],
   });
   mkdirSync(config.server.data_dir, { recursive: true });
   const store = new Store(join(config.server.data_dir, 'gateway.sqlite'));

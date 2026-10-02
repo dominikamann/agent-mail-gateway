@@ -31,13 +31,30 @@ function aligned(domain: string | undefined, fromDomain: string): boolean {
   return d === fromDomain || d.endsWith(`.${fromDomain}`) || fromDomain.endsWith(`.${d}`);
 }
 
-export function evaluateSenderAuth(headers: string[], fromAddress: string): SenderAuthResult {
-  const top = headers[0];
+function authservId(value: string): string {
+  return (value.split(';')[0] ?? '').trim().split(/\s+/)[0]?.toLowerCase() ?? '';
+}
+
+/** DMARC results that are an actual verdict; none/temperror/permerror mean "no verdict". */
+const DMARC_VERDICTS = new Set(['pass', 'fail', 'quarantine', 'reject']);
+
+/**
+ * Evaluates the Authentication-Results added by the receiving server. Uses the top-most header,
+ * or, when `trustedAuthservId` is set, the top-most header from that server only.
+ */
+export function evaluateSenderAuth(
+  headers: string[],
+  fromAddress: string,
+  trustedAuthservId?: string,
+): SenderAuthResult {
+  const top = trustedAuthservId
+    ? headers.find((h) => authservId(h) === trustedAuthservId.toLowerCase())
+    : headers[0];
   if (top === undefined) return 'missing';
   const fromDomain = fromAddress.toLowerCase().split('@').pop() ?? '';
   const entries = parseHeader(top);
 
-  const dmarc = entries.filter((e) => e.method === 'dmarc');
+  const dmarc = entries.filter((e) => e.method === 'dmarc' && DMARC_VERDICTS.has(e.result));
   if (dmarc.length > 0) {
     const ok = dmarc.every(
       (e) =>

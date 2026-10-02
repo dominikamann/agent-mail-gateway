@@ -17,7 +17,7 @@ must be set and non-empty.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `port` | number | `8080` | Port for REST (`/v1`), MCP (`/mcp`), `/health` and `/docs`. |
+| `port` | number | `8080` | Port for REST (`/v1`), MCP (`/mcp`), `/health` and `/docs`. The Docker healthcheck follows it. |
 | `log_level` | string | `info` | `fatal`, `error`, `warn`, `info`, `debug` or `trace`. Logs are JSON on stdout. |
 | `data_dir` | string | `/data` | Directory for `gateway.sqlite`. Mount a volume here. |
 
@@ -36,6 +36,7 @@ must be set and non-empty.
 | `allow_send_to` | list | `[]` | Who the agent may send mail and invites to. |
 | `non_allowed_action` | `delete` \| `keep` | `delete` | What happens to mail from non-allowed senders. |
 | `require_sender_auth` | boolean | `true` | Require a passing SPF/DKIM/DMARC result. |
+| `trusted_authserv_id` | string | — | Only trust `Authentication-Results` from this server name. |
 | `allow_delete` | boolean | `false` | Let the agent move mail to Trash. |
 | `max_sends_per_hour` | number | `30` | Sends (incl. invites) per rolling hour. `0` = unlimited. |
 | `max_attachment_mb` | number | `15` | Max total attachment size per outgoing message. |
@@ -93,8 +94,16 @@ is still invisible to the agent.
 
 Anyone can put any address into `From`. With `require_sender_auth: true` the gateway only
 accepts a message if the top-most `Authentication-Results` header (added by your receiving
-mail server) shows `dmarc=pass`, or — when there is no DMARC result — an aligned `dkim=pass`
-or `spf=pass` for the sender's domain.
+mail server) shows `dmarc=pass` for the sender's domain, or — when DMARC gives no verdict
+(`dmarc=none` because the domain publishes no DMARC policy, `temperror`, `permerror`, or no
+DMARC result at all) — an aligned `dkim=pass` or `spf=pass` for the sender's domain. Messages
+with more than one `From` header or address are always rejected.
+
+**`trusted_authserv_id` (recommended):** set it to the server name your mail server writes at
+the start of its `Authentication-Results` header (e.g. `mail.yourmailserver.eu` in
+`Authentication-Results: mail.yourmailserver.eu; dmarc=pass …`). The gateway then ignores
+headers from anyone else — a sender cannot slip in a forged `Authentication-Results` header on
+a path where your server does not add one.
 
 **Check that your server adds this header** before relying on it: open any received message's
 source (in most mail clients: "Show original" / "View source") and look for

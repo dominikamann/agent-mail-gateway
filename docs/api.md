@@ -46,7 +46,13 @@ Every error has the same shape:
 
 Query: `unread` (`true`/`false`), `since` (`2026-10-01` for the start of that day, or an ISO
 date-time; without an offset it is read in the mailbox `timezone`), `limit` (1–50, default 20),
-`cursor` (`next_cursor` from the previous page). Newest first; INBOX only.
+`cursor` (`next_cursor` from the previous page). Newest first; INBOX only. `since` compares
+with the time the message **arrived** in the mailbox, not the sender's `Date` header, so a
+delayed message is never skipped by an agent that polls with `since=<last poll>`.
+
+Messages larger than 1 MB are listed without a `preview` (empty string) so that listing never
+downloads big mails; `has_attachments` is still set. `read_message` always returns the full
+message.
 
 ```json
 {
@@ -157,10 +163,13 @@ X-Gateway-Signature: sha256=5d1f…
 {"event":"message.received","mailbox":"assistant","message":{"id":"1712345678-42","from":"you@yourmailserver.eu","subject":"Report","date":"2026-10-02T08:15:00.000Z","preview":"Please send…"}}
 ```
 
-The body is not included — fetch it with `GET /v1/messages/{id}` using the agent's key.
+The full body is not included (only `preview`, the first 200 characters, empty for messages
+over 1 MB) — fetch it with `GET /v1/messages/{id}` using the agent's key.
 Any 2xx response counts as delivered. Otherwise the gateway retries after 10 s, 1 min,
-5 min, 15 min and 30 min, then gives up (the message is still available via the API). Each
-message is delivered successfully at most once, also across restarts.
+5 min, 15 min and 30 min, then gives up (the message is still available via the API).
+Delivery is **at least once**: pending deliveries survive restarts, and if the gateway is
+stopped in the middle of a delivery the same webhook can arrive twice. Use `message.id` to
+ignore duplicates.
 
 Verify the signature: HMAC-SHA256 over `"<timestamp>.<raw body>"` with the webhook secret.
 

@@ -1,5 +1,6 @@
 import { GatewayError } from '../errors.js';
 import { decodeMessageId, encodeMessageId } from '../mail/ids.js';
+import type { FetchedMessage, MessageMeta } from '../mail/imap.js';
 import { type ParsedMessage, parseHeaders, parseMessage } from '../mail/parse.js';
 import { decideInbound } from '../policy/inbound.js';
 import { type MailboxContext, recordAudit } from './context.js';
@@ -53,6 +54,27 @@ function summary(id: string, parsed: ParsedMessage, seen: boolean): MessageSumma
 
 const notFound = () => new GatewayError('not_found', 'Message not found');
 
+/** Messages larger than this are listed without a preview instead of being downloaded. */
+export const PREVIEW_MAX_BYTES = 1024 * 1024;
+
+/**
+ * Parses an allowed message for a summary: the full source when it is small enough,
+ * otherwise only its headers (no preview, attachments taken from the IMAP structure).
+ */
+export async function parseForSummary(
+  ctx: MailboxContext,
+  meta: MessageMeta,
+  full?: FetchedMessage,
+): Promise<ParsedMessage> {
+  let source = full?.raw;
+  if (!source && meta.size <= PREVIEW_MAX_BYTES) {
+    source = (await ctx.imap.fetch([meta.uid]))[0]?.raw;
+  }
+  return parseMessage(source ?? Buffer.concat([meta.header, Buffer.from('\r\n\r\n')]));
+}
+
+const BATCH = 50;
+
 export async function listMessages(
   ctx: MailboxContext,
   q: { unread?: boolean; since?: Date; limit: number; cursor?: string },
@@ -71,33 +93,42 @@ export async function listMessages(
     .sort((a, b) => b - a);
 
   const messages: MessageSummary[] = [];
-  let lastUid: number | null = null;
+  let lastReturned: number | null = null;
   let i = 0;
   while (i < candidates.length && messages.length < q.limit) {
-    const batch = candidates.slice(i, i + q.limit);
+    const batch = candidates.slice(i, i + BATCH);
     i += batch.length;
-    const fetched = (await ctx.imap.fetch(batch)).sort((a, b) => b.uid - a.uid);
-    for (const f of fetched) {
-      lastUid = f.uid;
-      if (!decideInbound(ctx.config, await parseHeaders(f.raw)).allowed) continue;
+    // Decide on headers only, so blocked mail is never downloaded.
+    const allowed: MessageMeta[] = [];
+    for (const meta of (await ctx.imap.fetchMeta(batch)).sort((a, b) => b.uid - a.uid)) {
+      // IMAP SINCE only compares whole days; filter exactly on the arrival time.
+      if (q.since && meta.internalDate && meta.internalDate < q.since) continue;
+      if (!decideInbound(ctx.config, await parseHeaders(meta.header)).allowed) continue;
+      allowed.push(meta);
+      if (messages.length + allowed.length === q.limit) break;
+    }
+    const small = allowed.filter((m) => m.size <= PREVIEW_MAX_BYTES).map((m) => m.uid);
+    const sources = new Map((await ctx.imap.fetch(small)).map((f) => [f.uid, f]));
+    for (const meta of allowed) {
       let parsed: ParsedMessage;
       try {
-        parsed = await parseMessage(f.raw);
+        parsed = await parseForSummary(ctx, meta, sources.get(meta.uid));
       } catch (err) {
         ctx.log.warn(
-          { mailbox: ctx.config.name, uid: f.uid, err: (err as Error).message },
+          { mailbox: ctx.config.name, uid: meta.uid, err: (err as Error).message },
           'unparsable message skipped',
         );
         continue;
       }
-      // IMAP SINCE only compares whole days; narrow it down to the exact time.
-      if (q.since && parsed.date && new Date(parsed.date) < q.since) continue;
-      messages.push(summary(encodeMessageId(validity, f.uid), parsed, f.seen));
-      if (messages.length === q.limit) break;
+      messages.push({
+        ...summary(encodeMessageId(validity, meta.uid), parsed, meta.seen),
+        has_attachments: meta.hasAttachments || parsed.attachments.length > 0,
+      });
+      lastReturned = meta.uid;
     }
   }
-  const last = lastUid;
-  const more = last !== null && candidates.some((u) => u < last);
+  const last = lastReturned;
+  const more = messages.length === q.limit && last !== null && candidates.some((u) => u < last);
   return { messages, next_cursor: more && last !== null ? encodeMessageId(validity, last) : null };
 }
 
@@ -109,9 +140,11 @@ export async function loadAllowed(
   if (!decoded) throw notFound();
   const validity = await ctx.imap.uidValidity();
   if (decoded.uidValidity !== validity) throw notFound();
+  const [meta] = await ctx.imap.fetchMeta([decoded.uid]);
+  if (!meta) throw notFound();
+  if (!decideInbound(ctx.config, await parseHeaders(meta.header)).allowed) throw notFound();
   const [fetched] = await ctx.imap.fetch([decoded.uid]);
   if (!fetched) throw notFound();
-  if (!decideInbound(ctx.config, await parseHeaders(fetched.raw)).allowed) throw notFound();
   const parsed = await parseMessage(fetched.raw);
   return { uid: fetched.uid, seen: fetched.seen, parsed };
 }

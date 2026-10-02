@@ -6,6 +6,30 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1]
+
+### Fixed
+
+- Messages with oversized or unparsable headers are filtered (and audited) instead of breaking
+  the mailbox listing.
+- HTML conversion runs in bounded time for any input (deep nesting, unclosed tags).
+- Listing and the watcher decide on headers only; bodies of blocked mail are never downloaded,
+  and large messages are listed without a preview.
+- `dmarc=none` (no DMARC policy) no longer rejects mail with an aligned DKIM/SPF pass.
+- `since` filters on the arrival time instead of the sender's `Date` header.
+- `next_cursor` always points at a returned message.
+- Invalid dates such as `2026-02-30` are rejected with `validation_error`.
+- Event updates reserve the cancellation send together with the update.
+- The webhook dispatcher stops between deliveries on shutdown; docs now say at-least-once.
+- A failed copy to Sent is retried only when the folder is missing, never stored twice.
+- The Docker healthcheck follows `server.port`; compose binds to localhost by default.
+- Releases run the full test suite first; pre-release tags no longer move `latest`.
+
+### Added
+
+- `trusted_authserv_id` to only trust `Authentication-Results` from your own mail server.
+- Published to the official MCP Registry on every release.
+
 ## [0.1.0]
 
 ### Added

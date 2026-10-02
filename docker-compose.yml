@@ -4,7 +4,9 @@ services:
     # build: .   # use this instead of image to build from source
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      # Reachable from this machine only. Agents on other hosts should go through a reverse
+      # proxy with TLS; change to "8080:8080" only on a trusted private network.
+      - "127.0.0.1:8080:8080"
     env_file: .env
     volumes:
       - ./config.yaml:/config/config.yaml:ro

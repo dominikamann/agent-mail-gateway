@@ -42,18 +42,36 @@ export function assertSendCapacity(ctx: MailboxContext, needed = 1): void {
   }
 }
 
+/**
+ * Checks capacity for `count` sends and reserves them at once (synchronously, so parallel
+ * requests cannot take them). Each reservation is consumed by `deliver` or must be released.
+ */
+export function reserveSends(ctx: MailboxContext, count: number): number[] {
+  assertSendCapacity(ctx, count);
+  return Array.from({ length: count }, () => ctx.store.recordSend(ctx.config.name, ctx.now()));
+}
+
+export function releaseSends(ctx: MailboxContext, reservations: (number | undefined)[]): void {
+  for (const id of reservations) if (id !== undefined) ctx.store.deleteSend(id);
+}
+
 export async function deliver(
   ctx: MailboxContext,
   input: DeliverInput,
   action: 'send' | 'event_create' | 'event_update' | 'event_cancel',
+  reserved?: number,
 ): Promise<{ messageId: string; warnings: string[] }> {
   const recipients = [
     ...new Set([...input.to, ...input.cc, ...input.bcc].map((a) => a.toLowerCase())),
   ];
-  assertRecipientsAllowed(ctx, recipients);
+  try {
+    assertRecipientsAllowed(ctx, recipients);
+  } catch (err) {
+    releaseSends(ctx, [reserved]);
+    throw err;
+  }
   // Check and reserve the slot synchronously so parallel requests cannot overshoot the limit.
-  assertSendCapacity(ctx);
-  const reservation = ctx.store.recordSend(ctx.config.name, ctx.now());
+  const reservation = reserved ?? (reserveSends(ctx, 1)[0] as number);
 
   let composed: { raw: Buffer; messageId: string };
   try {

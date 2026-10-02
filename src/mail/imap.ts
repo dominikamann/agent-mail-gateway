@@ -10,6 +10,16 @@ export interface FetchedMessage {
   seen: boolean;
 }
 
+/** Everything needed to decide policy and build a summary, without downloading the body. */
+export interface MessageMeta {
+  uid: number;
+  header: Buffer;
+  seen: boolean;
+  size: number;
+  internalDate: Date | null;
+  hasAttachments: boolean;
+}
+
 export interface SearchQuery {
   unread?: boolean;
   since?: Date;
@@ -28,6 +38,8 @@ export interface ImapMailbox {
   state(): ConnectionState;
   uidValidity(): Promise<string>;
   search(q: SearchQuery): Promise<number[]>;
+  /** Headers, flags, size, arrival time and attachment presence; no body. */
+  fetchMeta(uids: number[]): Promise<MessageMeta[]>;
   fetch(uids: number[]): Promise<FetchedMessage[]>;
   setSeen(uid: number, seen: boolean): Promise<void>;
   moveToTrash(uid: number): Promise<void>;
@@ -37,6 +49,31 @@ export interface ImapMailbox {
 }
 
 const MAX_BACKOFF_MS = 60_000;
+
+interface StructureNode {
+  type?: string;
+  disposition?: string;
+  dispositionParameters?: Record<string, string>;
+  childNodes?: StructureNode[];
+}
+
+class FolderMissingError extends Error {}
+
+function isMissingFolder(err: unknown): boolean {
+  if (err instanceof FolderMissingError) return true;
+  const e = err as { serverResponseCode?: string; responseText?: string; message?: string };
+  if (e.serverResponseCode === 'TRYCREATE' || e.serverResponseCode === 'NONEXISTENT') return true;
+  return /\b(TRYCREATE|NONEXISTENT|no such mailbox|mailbox (does not|doesn't) exist)\b/i.test(
+    `${e.responseText ?? ''} ${e.message ?? ''}`,
+  );
+}
+
+function hasAttachment(node: StructureNode | undefined): boolean {
+  if (!node) return false;
+  if (node.disposition?.toLowerCase() === 'attachment') return true;
+  if (node.dispositionParameters?.filename && !node.type?.startsWith('text/')) return true;
+  return (node.childNodes ?? []).some(hasAttachment);
+}
 
 export class ImapFlowMailbox implements ImapMailbox {
   private client: ImapFlow | null = null;
@@ -167,12 +204,43 @@ export class ImapFlowMailbox implements ImapMailbox {
     return this.withInbox(async (c) => {
       const query: Record<string, unknown> = {};
       if (q.unread) query.seen = false;
-      if (q.since) query.since = q.since;
+      // SINCE compares whole days in the server's time zone; ask for one day more and let the
+      // caller filter exactly on the arrival time.
+      if (q.since) query.since = new Date(q.since.getTime() - 86_400_000);
       if (q.uidAbove !== undefined) query.uid = `${q.uidAbove + 1}:*`;
       if (Object.keys(query).length === 0) query.all = true;
       const result = await c.search(query, { uid: true });
       const uids = (result || []).filter((u) => q.uidAbove === undefined || u > q.uidAbove);
       return uids.sort((a, b) => a - b);
+    });
+  }
+
+  async fetchMeta(uids: number[]): Promise<MessageMeta[]> {
+    if (uids.length === 0) return [];
+    return this.withInbox(async (c) => {
+      const out: MessageMeta[] = [];
+      for await (const m of c.fetch(
+        uids.join(','),
+        {
+          uid: true,
+          flags: true,
+          headers: true,
+          size: true,
+          internalDate: true,
+          bodyStructure: true,
+        },
+        { uid: true },
+      )) {
+        out.push({
+          uid: m.uid,
+          header: m.headers ?? Buffer.alloc(0),
+          seen: m.flags?.has('\\Seen') ?? false,
+          size: m.size ?? 0,
+          internalDate: m.internalDate ? new Date(m.internalDate) : null,
+          hasAttachments: hasAttachment(m.bodyStructure),
+        });
+      }
+      return out.sort((a, b) => a.uid - b.uid);
     });
   }
 
@@ -221,13 +289,18 @@ export class ImapFlowMailbox implements ImapMailbox {
     return this.folders;
   }
 
-  /** Runs `fn` with the resolved folders; on failure re-detects folders once and retries. */
+  /**
+   * Runs `fn` with the resolved folders. Only if the folder no longer exists (renamed or deleted)
+   * are folders re-detected and `fn` retried once; any other error is passed on, so a message is
+   * never stored twice.
+   */
   private async withFolders(
     fn: (folders: { sent: string; trash: string | null }) => Promise<unknown>,
   ): Promise<void> {
     try {
       await fn(await this.resolveFolders(this.require()));
-    } catch {
+    } catch (err) {
+      if (!isMissingFolder(err)) throw err;
       this.folders = null;
       await fn(await this.resolveFolders(this.require()));
     }
@@ -238,7 +311,7 @@ export class ImapFlowMailbox implements ImapMailbox {
       this.withInbox(async (inbox) => {
         if (trash) {
           const moved = await inbox.messageMove(String(uid), trash, { uid: true });
-          if (!moved) throw new Error(`could not move message to ${trash}`);
+          if (!moved) throw new FolderMissingError(`could not move message to ${trash}`);
         } else {
           await inbox.messageDelete(String(uid), { uid: true });
         }
@@ -249,7 +322,7 @@ export class ImapFlowMailbox implements ImapMailbox {
   async appendToSent(raw: Buffer): Promise<void> {
     await this.withFolders(async ({ sent }) => {
       const res = await this.require().append(sent, raw, ['\\Seen']);
-      if (!res) throw new Error(`could not append to ${sent}`);
+      if (!res) throw new FolderMissingError(`could not append to ${sent}`);
     });
   }
 }

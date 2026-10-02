@@ -125,6 +125,8 @@ describe('M6: since filter', () => {
         subject: 'early',
         date: new Date('2026-10-02T06:00:00Z'),
       }),
+      false,
+      new Date('2026-10-02T06:00:00Z'),
     );
     imap.add(
       await buildRaw({
@@ -132,6 +134,8 @@ describe('M6: since filter', () => {
         subject: 'late',
         date: new Date('2026-10-02T18:00:00Z'),
       }),
+      false,
+      new Date('2026-10-02T18:00:00Z'),
     );
     const res = await listMessages(ctx, { limit: 10, since: new Date('2026-10-02T12:00:00Z') });
     expect(res.messages.map((m) => m.subject)).toEqual(['late']);

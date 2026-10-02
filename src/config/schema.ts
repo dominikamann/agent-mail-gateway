@@ -38,6 +38,7 @@ export const mailboxSchema = z
     allow_send_to: z.array(addressPattern).default([]),
     non_allowed_action: z.enum(['delete', 'keep']).default('delete'),
     require_sender_auth: z.boolean().default(true),
+    trusted_authserv_id: z.string().trim().toLowerCase().min(1).optional(),
     allow_delete: z.boolean().default(false),
     max_sends_per_hour: z.coerce.number().int().min(0).default(30),
     max_attachment_mb: z.coerce.number().positive().default(15),
