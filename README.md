@@ -5,6 +5,8 @@
 
 Give every AI agent its own email mailbox — without giving it the keys to that mailbox.
 
+*An open-source project by [amannlabs.eu](https://amannlabs.eu).*
+
 Agent Mail Gateway is a small self-hosted Docker service that sits between your agents and
 ordinary IMAP/SMTP mailboxes (Plesk, IONOS, Outlook, your own server — any provider). Each agent
 gets **one API key bound to exactly one mailbox**. Through the gateway it can read mail, send
@@ -110,3 +112,7 @@ vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 ## License
 
 [MIT](LICENSE)
+
+---
+
+<p align="center">Proudly provided by <a href="https://amannlabs.eu">amannlabs.eu</a></p>
