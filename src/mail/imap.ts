@@ -49,6 +49,24 @@ export interface ImapMailbox {
 }
 
 const MAX_BACKOFF_MS = 60_000;
+/**
+ * Waits after a rejected login. A wrong password never fixes itself, and fast retries make
+ * servers (fail2ban) block the gateway's IP — taking every other mailbox on that server down too.
+ */
+export const AUTH_RETRY_MS = [15 * 60_000, 30 * 60_000, 60 * 60_000];
+
+export function isAuthFailure(err: unknown): boolean {
+  const e = err as {
+    authenticationFailed?: boolean;
+    serverResponseCode?: string;
+    responseText?: string;
+    message?: string;
+  };
+  if (e?.authenticationFailed || e?.serverResponseCode === 'AUTHENTICATIONFAILED') return true;
+  return /AUTHENTICATIONFAILED|authentication failed|invalid credentials|login failed/i.test(
+    `${e?.responseText ?? ''} ${e?.message ?? ''}`,
+  );
+}
 
 interface StructureNode {
   type?: string;
@@ -81,6 +99,7 @@ export class ImapFlowMailbox implements ImapMailbox {
   private status: ConnectionState = 'stopped';
   private readonly listeners: (() => void)[] = [];
   private backoffMs = 1000;
+  private authFailures = 0;
   private timer: NodeJS.Timeout | null = null;
   private folders: { sent: string; trash: string | null } | null = null;
 
@@ -149,12 +168,23 @@ export class ImapFlowMailbox implements ImapMailbox {
       this.folders = null;
       this.status = 'connected';
       this.backoffMs = 1000;
+      this.authFailures = 0;
       this.log.info({ mailbox: this.cfg.name }, 'imap connected');
       for (const l of this.listeners) l();
     } catch (err) {
       this.pending = null;
       client.close();
       if (this.status === 'stopped') return;
+      if (isAuthFailure(err)) {
+        const delay = AUTH_RETRY_MS[Math.min(this.authFailures, AUTH_RETRY_MS.length - 1)]!;
+        this.authFailures++;
+        this.log.error(
+          { mailbox: this.cfg.name, retryInMinutes: delay / 60_000 },
+          'imap login rejected: check username and password in the config; not retrying soon to avoid an IP ban',
+        );
+        this.scheduleReconnect('error', delay);
+        return;
+      }
       this.log.error(
         { mailbox: this.cfg.name, err: (err as Error).message },
         'imap connect failed',
@@ -163,12 +193,12 @@ export class ImapFlowMailbox implements ImapMailbox {
     }
   }
 
-  private scheduleReconnect(state: ConnectionState): void {
+  private scheduleReconnect(state: ConnectionState, fixedDelay?: number): void {
     if (this.status === 'stopped') return;
     this.client = null;
     this.status = state;
-    const delay = this.backoffMs;
-    this.backoffMs = Math.min(this.backoffMs * 2, MAX_BACKOFF_MS);
+    const delay = fixedDelay ?? this.backoffMs;
+    if (fixedDelay === undefined) this.backoffMs = Math.min(this.backoffMs * 2, MAX_BACKOFF_MS);
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.connect(), delay);
     this.timer.unref();

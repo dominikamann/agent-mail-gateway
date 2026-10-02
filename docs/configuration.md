@@ -111,6 +111,20 @@ source (in most mail clients: "Show original" / "View source") and look for
 mail is filtered. The gateway logs a hint when it filters a message only because the header is
 missing.
 
+### Wrong passwords and IP bans
+
+A rejected login never fixes itself, and many mail servers ban an IP after a few failed logins
+(fail2ban) — which would also cut off every other mailbox the gateway serves from that server.
+So the gateway does not retry rejected logins quickly:
+
+- **IMAP:** after a rejected login it waits 15 minutes, then 30, then every 60 minutes, and logs
+  `imap login rejected: check username and password`. `/health` shows the mailbox as `error`.
+  Network problems (server down, timeouts) are still retried quickly (1 s doubling to 60 s).
+- **SMTP:** after a rejected login no new login is attempted for 15 minutes; sends fail with
+  `send_failed` during that time.
+
+After fixing the password, restart the container to reconnect immediately.
+
 ### Folders
 
 `Sent` and `Trash` are detected via IMAP special-use flags, then by name. If no Sent folder

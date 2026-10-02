@@ -44,7 +44,11 @@ export interface SmtpSender {
   close(): void;
 }
 
-export function createSmtpSender(cfg: MailboxConfig): SmtpSender {
+/** After a rejected SMTP login, no new login is attempted for this long (avoids IP bans). */
+export const SMTP_AUTH_COOLDOWN_MS = 15 * 60_000;
+
+export function createSmtpSender(cfg: MailboxConfig, now: () => number = Date.now): SmtpSender {
+  let blockedUntil = 0;
   const transport = nodemailer.createTransport({
     host: cfg.smtp.host,
     port: cfg.smtp.port,
@@ -58,7 +62,18 @@ export function createSmtpSender(cfg: MailboxConfig): SmtpSender {
   });
   return {
     async send(envelope, raw) {
-      await transport.sendMail({ envelope, raw });
+      if (now() < blockedUntil) {
+        throw new Error(
+          'SMTP login was rejected recently; not retrying until the cooldown ends (check username and password)',
+        );
+      }
+      try {
+        await transport.sendMail({ envelope, raw });
+      } catch (err) {
+        if ((err as { code?: string }).code === 'EAUTH')
+          blockedUntil = now() + SMTP_AUTH_COOLDOWN_MS;
+        throw err;
+      }
     },
     close() {
       transport.close();

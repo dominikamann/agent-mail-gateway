@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.4]
+
+### Fixed
+
+- A wrong IMAP or SMTP password no longer causes repeated login attempts that get the
+  gateway's IP banned (fail2ban). Rejected IMAP logins are retried after 15/30/60 minutes;
+  SMTP pauses logins for 15 minutes. Network errors still reconnect quickly.
+
 ## [0.1.3]
 
 ### Added
