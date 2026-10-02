@@ -108,6 +108,10 @@ curl -H "Authorization: Bearer $AGENT_API_KEY" "http://localhost:8080/v1/message
 `get_attachment`, `mark_message`, `delete_message`, `send_message`, `create_event`,
 `update_event`, `cancel_event`, `list_events`.
 
+**stdio** — clients that can only start local processes use the bundled bridge
+`node dist/stdio.js` with `AGENT_MAIL_URL` and `AGENT_MAIL_API_KEY`; see
+[docs/stdio.md](docs/stdio.md).
+
 See [docs/api.md](docs/api.md) for every endpoint, the webhook format and examples.
 
 **Hermes Agent** — connect the MCP server in `~/.hermes/config.yaml` and install the plugin
@@ -124,6 +128,7 @@ Step by step: [docs/hermes.md](docs/hermes.md).
 - [Configuration](docs/configuration.md)
 - [REST API, webhooks and MCP tools](docs/api.md)
 - [Hermes Agent integration and plugin](docs/hermes.md)
+- [stdio clients](docs/stdio.md)
 - [Security model](docs/security.md)
 - [Contributing](CONTRIBUTING.md)
 

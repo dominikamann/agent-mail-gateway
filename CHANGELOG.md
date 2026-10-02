@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.3]
+
+### Added
+
+- stdio entry point `dist/stdio.js` for clients that cannot speak HTTP. It bridges to a running
+  gateway with the agent's own key (`AGENT_MAIL_URL`, `AGENT_MAIL_API_KEY`) and never reads the
+  gateway configuration. Without a URL it runs in preview mode (tools listed, calls explain how
+  to connect), which MCP directories use for inspection.
+- `glama.json` naming the maintainer.
+
 ## [0.1.2]
 
 ### Added

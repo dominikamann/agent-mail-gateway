@@ -6,6 +6,7 @@ Use it when an agent needs email: sending reports or alerts, receiving tasks by 
 
 - Image: `ghcr.io/dominikamann/agent-mail-gateway`
 - MCP endpoint: `POST /mcp` (Streamable HTTP), header `Authorization: Bearer <api_key>`
+- stdio: `node dist/stdio.js` with `AGENT_MAIL_URL` and `AGENT_MAIL_API_KEY` (bridge to the gateway)
 - REST API: `/v1` (OpenAPI at `/docs`)
 - MCP tools: get_mailbox_info, list_messages, read_message, get_attachment, mark_message, delete_message, send_message, create_event, update_event, cancel_event, list_events
 
