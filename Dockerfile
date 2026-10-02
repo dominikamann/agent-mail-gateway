@@ -7,6 +7,7 @@ COPY src ./src
 RUN npm run build && npm prune --omit=dev
 
 FROM node:24-slim
+LABEL io.modelcontextprotocol.server.name="io.github.dominikamann/agent-mail-gateway"
 ENV NODE_ENV=production CONFIG_PATH=/config/config.yaml
 WORKDIR /app
 COPY --from=build /app/package.json ./

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.dominikamann/agent-mail-gateway",
+  "title": "Agent Mail Gateway",
+  "description": "Self-hosted email for AI agents: own IMAP/SMTP mailbox per key, allow lists, calendar invites.",
+  "version": "0.1.0",
+  "websiteUrl": "https://github.com/dominikamann/agent-mail-gateway",
+  "repository": {
+    "url": "https://github.com/dominikamann/agent-mail-gateway",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/dominikamann/agent-mail-gateway:0.1.0",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://localhost:8080/mcp",
+        "headers": [
+          {
+            "name": "Authorization",
+            "description": "Bearer <api_key> of the agent's mailbox, as configured in the gateway's config.yaml",
+            "isRequired": true,
+            "isSecret": true
+          }
+        ]
+      }
+    }
+  ]
+}
