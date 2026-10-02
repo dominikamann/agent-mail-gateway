@@ -69,6 +69,7 @@ export class WebhookDispatcher {
       return;
     }
     const timestamp = Math.floor(this.now() / 1000);
+    const signature = signPayload(hook.secret, timestamp, job.payload);
     let ok = false;
     let reason = '';
     try {
@@ -78,7 +79,10 @@ export class WebhookDispatcher {
           'content-type': 'application/json',
           'user-agent': `agent-mail-gateway/${VERSION}`,
           'x-gateway-timestamp': String(timestamp),
-          'x-gateway-signature': signPayload(hook.secret, timestamp, job.payload),
+          'x-gateway-signature': signature,
+          // Same signature in the generic "V2" scheme understood by Hermes Agent webhooks.
+          'x-webhook-timestamp': String(timestamp),
+          'x-webhook-signature-v2': signature.slice('sha256='.length),
         },
         body: job.payload,
         signal: AbortSignal.timeout(10_000),

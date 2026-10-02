@@ -121,6 +121,7 @@ export class InboundWatcher {
       const id = encodeMessageId(validity, uid);
       const payload = JSON.stringify({
         event: 'message.received',
+        event_type: 'message.received',
         mailbox: config.name,
         message: {
           id,

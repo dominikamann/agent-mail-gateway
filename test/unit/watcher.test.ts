@@ -33,6 +33,7 @@ describe('InboundWatcher', () => {
     expect(jobs).toHaveLength(1);
     expect(JSON.parse(jobs[0]!.payload)).toEqual({
       event: 'message.received',
+      event_type: 'message.received',
       mailbox: 'agent',
       message: {
         id: `1-${allowed}`,

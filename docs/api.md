@@ -159,9 +159,15 @@ POST <webhook.url>
 Content-Type: application/json
 X-Gateway-Timestamp: 1790960000
 X-Gateway-Signature: sha256=5d1f…
+X-Webhook-Timestamp: 1790960000
+X-Webhook-Signature-V2: 5d1f…
 
-{"event":"message.received","mailbox":"assistant","message":{"id":"1712345678-42","from":"you@yourmailserver.eu","subject":"Report","date":"2026-10-02T08:15:00.000Z","preview":"Please send…"}}
+{"event":"message.received","event_type":"message.received","mailbox":"assistant","message":{"id":"1712345678-42","from":"you@yourmailserver.eu","subject":"Report","date":"2026-10-02T08:15:00.000Z","preview":"Please send…"}}
 ```
+
+Both header pairs carry the same HMAC-SHA256 over `"<timestamp>.<raw body>"`:
+`X-Gateway-*` with a `sha256=` prefix, and `X-Webhook-*` without prefix — the generic "V2"
+scheme that Hermes Agent webhook routes verify natively (see [hermes.md](hermes.md)).
 
 The full body is not included (only `preview`, the first 200 characters, empty for messages
 over 1 MB) — fetch it with `GET /v1/messages/{id}` using the agent's key.

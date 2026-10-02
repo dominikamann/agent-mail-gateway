@@ -59,12 +59,44 @@ and plugins must not carry credentials. Step 2 is the connection, the plugin is 
 
 ## Reacting to new mail
 
-- **Always-on agents:** give the mailbox a `webhook` in the gateway config and point it at an
-  HTTP endpoint that wakes the agent. The webhook carries only the message id, sender, subject
-  and a short preview, signed with HMAC (see [api.md](api.md#webhooks)); the agent then calls
-  `read_message` with that id.
+- **Always-on agents:** let the gateway call a Hermes webhook route directly. Hermes verifies
+  the gateway's signature natively (`X-Webhook-Signature-V2`), no adapter needed. See below.
 - **Scheduled agents (cron):** no webhook needed. Start each run with `list_messages` and
   `unread: true`.
+
+### Webhook route in Hermes
+
+In the Hermes `config.yaml` of the agent's profile, add a route (the webhook platform listens
+on port 8644 by default):
+
+```yaml
+platforms:
+  webhook:
+    enabled: true
+    extra:
+      port: 8644
+      routes:
+        agent-mail:
+          events: ["message.received"]
+          secret: "<the same value as webhook.secret of this mailbox in the gateway>"
+          prompt: |
+            New email in your mailbox from {message.from}: "{message.subject}"
+            Preview: {message.preview}
+            Read it with read_message (id {message.id}) and handle it.
+```
+
+Then point the mailbox at it in the gateway's `config.yaml`:
+
+```yaml
+    webhook:
+      url: http://hermes:8644/webhooks/agent-mail
+      secret: ${AGENT_WEBHOOK_SECRET}
+```
+
+Use the same secret on both sides (`openssl rand -hex 24`). Hermes rejects requests whose
+timestamp is more than 5 minutes off, so keep both machines' clocks in sync (NTP). Each
+message triggers one agent run; the gateway retries failed deliveries and the payload's
+`message.id` lets the agent ignore a rare duplicate.
 
 ## Example task prompts
 

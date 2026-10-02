@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2]
+
+### Added
+
+- Webhooks are also signed in the generic V2 scheme (`X-Webhook-Timestamp`,
+  `X-Webhook-Signature-V2`) and carry `event_type`, so Hermes Agent webhook routes accept them
+  directly. Existing `X-Gateway-*` headers are unchanged.
+
 ## [0.1.1]
 
 ### Fixed
