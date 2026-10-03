@@ -8,7 +8,8 @@ export const RETRY_DELAYS_MS = [10_000, 60_000, 300_000, 900_000, 1_800_000];
 
 export class WebhookDispatcher {
   private timer: NodeJS.Timeout | null = null;
-  private inflight: Promise<void> | null = null;
+  /** Deliveries in progress, one per mailbox. */
+  private readonly busy = new Map<string, Promise<void>>();
   private stopping = false;
   private readonly fetchFn: typeof fetch;
   private readonly now: () => number;
@@ -32,41 +33,60 @@ export class WebhookDispatcher {
     this.timer.unref();
   }
 
-  /** Stops the timer and resolves once a delivery in progress has been recorded. */
+  /** Stops the timer and resolves once deliveries in progress have been recorded. */
   async stop(): Promise<void> {
     this.stopping = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    await this.inflight;
+    await Promise.all(this.busy.values());
   }
 
-  /** Delivers all due webhooks. Never rejects; concurrent calls share one run. */
+  /**
+   * Starts delivering due webhooks for every mailbox that is not already busy, and resolves when
+   * those deliveries are done. Never rejects. Mailboxes run independently and each in order, so a
+   * slow or failing endpoint only delays its own mailbox.
+   */
   runOnce(): Promise<void> {
-    if (this.inflight) return this.inflight;
-    const run = this.dispatchDue().finally(() => {
-      if (this.inflight === run) this.inflight = null;
-    });
-    this.inflight = run;
-    return run;
-  }
-
-  private async dispatchDue(): Promise<void> {
+    let due: Map<string, WebhookJob[]>;
     try {
-      for (const job of this.deps.store.dueWebhooks(this.now())) {
-        if (this.stopping) break;
-        await this.deliver(job);
+      due = new Map();
+      for (const job of this.deps.store.dueWebhooks(this.now(), [...this.busy.keys()])) {
+        due.set(job.mailbox, [...(due.get(job.mailbox) ?? []), job]);
       }
     } catch (err) {
       this.deps.log.error({ err: (err as Error).message }, 'webhook dispatch failed');
+      return Promise.resolve();
+    }
+    const started: Promise<void>[] = [];
+    for (const [mailbox, jobs] of due) {
+      const run = this.deliverAll(jobs).finally(() => this.busy.delete(mailbox));
+      this.busy.set(mailbox, run);
+      started.push(run);
+    }
+    return Promise.all(started).then(() => undefined);
+  }
+
+  /** Delivers one mailbox's jobs in order; after a failure the rest wait for their retry. */
+  private async deliverAll(jobs: WebhookJob[]): Promise<void> {
+    try {
+      for (const job of jobs) {
+        if (this.stopping || !(await this.deliver(job))) break;
+      }
+    } catch (err) {
+      this.deps.log.error(
+        { mailbox: jobs[0]?.mailbox, err: (err as Error).message },
+        'webhook dispatch failed',
+      );
     }
   }
 
-  private async deliver(job: WebhookJob): Promise<void> {
+  /** Returns true if the webhook was delivered. */
+  private async deliver(job: WebhookJob): Promise<boolean> {
     const { store, log } = this.deps;
     const hook = this.deps.mailboxes.get(job.mailbox)?.webhook;
     if (!hook) {
       store.markWebhookFailed(job.id, job.attempts);
-      return;
+      return true;
     }
     const timestamp = Math.floor(this.now() / 1000);
     const signature = signPayload(hook.secret, timestamp, job.payload);
@@ -97,7 +117,7 @@ export class WebhookDispatcher {
 
     if (ok) {
       store.markWebhookDelivered(job.id);
-      return;
+      return true;
     }
     const attempts = job.attempts + 1;
     const delay = RETRY_DELAYS_MS[attempts - 1];
@@ -114,5 +134,6 @@ export class WebhookDispatcher {
         'webhook delivery failed, retrying',
       );
     }
+    return false;
   }
 }

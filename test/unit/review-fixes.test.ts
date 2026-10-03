@@ -81,13 +81,14 @@ describe('I3: rate limit holds under concurrency', () => {
   it('only lets max_sends_per_hour through when sends run in parallel', async () => {
     const { ctx, smtp } = createTestContext({ max_sends_per_hour: 3 });
     const results = await Promise.allSettled(
-      Array.from({ length: 10 }, () =>
+      // Different bodies: identical parallel messages would be stopped as duplicates.
+      Array.from({ length: 10 }, (_, i) =>
         sendMessage(ctx, {
           to: ['boss@test.local'],
           cc: [],
           bcc: [],
           subject: 's',
-          body_markdown: 'b',
+          body_markdown: `b${i}`,
           attachments: [],
         }),
       ),

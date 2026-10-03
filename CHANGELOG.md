@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.3]
+
+### Fixed
+
+- The duplicate check also catches the same message sent twice at the same time.
+- Changes to the same event are applied one after another, so every update gets its own
+  SEQUENCE and none is lost; attendee answers that arrive during an update are kept.
+- Webhooks are delivered per mailbox in parallel: a slow or failing endpoint only delays its
+  own mailbox.
+
+### Changed
+
+- `update_event` / `PATCH /v1/events/{id}`: `location` and `description_markdown` can be set to
+  `null` to remove them.
+- `/health` without a key only returns the overall status; mailbox names and states need a key
+  (and show only that mailbox).
+- GitHub Actions are pinned to commit SHAs and the Docker base image to a digest; Dependabot
+  keeps them current.
+
 ## [0.3.2]
 
 ### Fixed

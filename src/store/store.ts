@@ -100,13 +100,18 @@ export class Store {
     return Number(res.changes) > 0;
   }
 
-  dueWebhooks(now: number, limit = 20): WebhookJob[] {
+  /** Due webhooks, at most `perMailbox` per mailbox, oldest first; `skip` mailboxes are left out. */
+  dueWebhooks(now: number, skip: string[] = [], perMailbox = 20): WebhookJob[] {
     const rows = this.db
       .prepare(
-        `SELECT id, mailbox, message_id, payload, attempts FROM webhooks
-         WHERE status = 'pending' AND next_attempt_at <= ? ORDER BY next_attempt_at, id LIMIT ?`,
+        `SELECT id, mailbox, message_id, payload, attempts FROM (
+           SELECT *, ROW_NUMBER() OVER (PARTITION BY mailbox ORDER BY next_attempt_at, id) AS n
+           FROM webhooks
+           WHERE status = 'pending' AND next_attempt_at <= ?
+             AND mailbox NOT IN (SELECT value FROM json_each(?))
+         ) WHERE n <= ? ORDER BY next_attempt_at, id`,
       )
-      .all(now, limit) as Row[];
+      .all(now, JSON.stringify(skip), perMailbox) as Row[];
     return rows.map((r) => ({
       id: Number(r.id),
       mailbox: String(r.mailbox),

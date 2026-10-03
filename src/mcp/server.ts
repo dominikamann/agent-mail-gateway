@@ -349,7 +349,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
     {
       title: 'Change a meeting you created',
       description:
-        'Change a meeting created with create_event: give only the fields that change. Attendees get an updated invitation that replaces the old entry in their calendar; removed attendees get a cancellation. Changing the time clears earlier answers; changing only start keeps the duration. Returns the updated event.',
+        'Change a meeting created with create_event: give only the fields that change (null removes location or description_markdown). Attendees get an updated invitation that replaces the old entry in their calendar; removed attendees get a cancellation. Changing the time clears earlier answers; changing only start keeps the duration. Returns the updated event.',
       inputSchema: { id: eventId, ...eventPatchSchema.shape },
       annotations: SEND,
     },

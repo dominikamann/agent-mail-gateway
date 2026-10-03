@@ -185,7 +185,8 @@ UTC `start`/`end`, `sequence` and `status`.
 
 ### `PATCH /v1/events/{id}`
 
-Any subset of the fields above. All attendees receive an updated invitation (the calendar
+Any subset of the fields above; `location` or `description_markdown` set to `null` removes it.
+Changes to the same event are applied one after another. All attendees receive an updated invitation (the calendar
 entry is updated in place); attendees removed from the list receive a cancellation.
 
 ### `DELETE /v1/events/{id}`
@@ -210,7 +211,9 @@ read as UTC and `timezone_unknown` is `true`.
 
 ## Health
 
-`GET /health` (no key): `{ "status": "ok" | "degraded", "mailboxes": [{ "name": "assistant", "state": "connected" }] }`.
+`GET /health`: without a key only `{ "status": "ok" | "degraded" }` (all mailboxes connected or not);
+with a mailbox key, `status` covers only that mailbox and its state is included:
+`{ "status": "ok", "mailboxes": [{ "name": "assistant", "state": "connected" }] }`.
 States: `connected`, `reconnecting`, `error`, `stopped`.
 
 ## Webhooks
@@ -236,6 +239,7 @@ The full body is not included (only `preview`, the first 200 characters, empty f
 over 1 MB) — fetch it with `GET /v1/messages/{id}` using the agent's key.
 Any 2xx response counts as delivered; redirects are not followed (a 3xx counts as failed). Otherwise the gateway retries after 10 s, 1 min,
 5 min, 15 min and 30 min, then gives up (the message is still available via the API).
+Mailboxes are delivered independently: a slow or failing endpoint only delays its own mailbox.
 Delivery is **at least once**: pending deliveries survive restarts, and if the gateway is
 stopped in the middle of a delivery the same webhook can arrive twice. Use `message.id` to
 ignore duplicates.

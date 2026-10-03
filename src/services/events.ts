@@ -180,11 +180,31 @@ export async function createEvent(ctx: MailboxContext, input: EventInput): Promi
   return view(rec, warnings);
 }
 
-export async function updateEvent(
+/** Runs changes to one event one after another, so each gets its own SEQUENCE. */
+const eventQueues = new Map<string, Promise<unknown>>();
+function oneAtATime<T>(ctx: MailboxContext, id: string, fn: () => Promise<T>): Promise<T> {
+  const key = `${ctx.config.name}\0${id}`;
+  const run = (eventQueues.get(key) ?? Promise.resolve()).then(fn, fn);
+  const tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  eventQueues.set(key, tail);
+  void tail.then(() => {
+    if (eventQueues.get(key) === tail) eventQueues.delete(key);
+  });
+  return run;
+}
+
+export function updateEvent(
   ctx: MailboxContext,
   id: string,
   patch: EventPatch,
 ): Promise<EventView> {
+  return oneAtATime(ctx, id, () => applyUpdate(ctx, id, patch));
+}
+
+async function applyUpdate(ctx: MailboxContext, id: string, patch: EventPatch): Promise<EventView> {
   const old = load(ctx, id);
   const tz = patch.timezone ?? old.timezone;
   const attendees = patch.attendees
@@ -206,8 +226,10 @@ export async function updateEvent(
       tz,
     ),
     timezone: tz,
-    location: patch.location ?? old.location,
-    description: patch.description_markdown ?? old.description,
+    // undefined keeps the old value, null removes it.
+    location: patch.location === undefined ? old.location : patch.location,
+    description:
+      patch.description_markdown === undefined ? old.description : patch.description_markdown,
     attendees,
     sequence: old.sequence + 1,
     updatedAt: ctx.now(),
@@ -243,6 +265,15 @@ export async function updateEvent(
     releaseSends(ctx, [cancelSlot]);
     throw err;
   }
+  // Keep answers that arrived while the update was being sent (unless the time changed).
+  if (!timeChanged) {
+    const current = ctx.store.getEvent(ctx.config.name, id)?.responses ?? {};
+    rec.responses = Object.fromEntries(
+      Object.entries({ ...rec.responses, ...current }).filter(([email]) =>
+        attendees.includes(email),
+      ),
+    );
+  }
   ctx.store.saveEvent(rec);
   warnings.unshift(...reviewWarnings);
   warnings.push(...removed.warnings);
@@ -262,7 +293,11 @@ export async function updateEvent(
   return view(rec, warnings);
 }
 
-export async function cancelEvent(ctx: MailboxContext, id: string): Promise<EventView> {
+export function cancelEvent(ctx: MailboxContext, id: string): Promise<EventView> {
+  return oneAtATime(ctx, id, () => applyCancel(ctx, id));
+}
+
+async function applyCancel(ctx: MailboxContext, id: string): Promise<EventView> {
   const old = load(ctx, id);
   const rec: EventRecord = {
     ...old,

@@ -43,13 +43,13 @@ describe('auth and health', () => {
   it('serves health and docs without auth', async () => {
     const { imap } = await setup();
     imap.connection = 'reconnecting';
+    // Without a key only the overall status; mailbox names stay private.
     const res = await app.inject({ url: '/health' });
-    expect(res.json()).toEqual({
+    expect(res.json()).toEqual({ status: 'degraded' });
+    const own = await app.inject({ url: '/health', headers: auth });
+    expect(own.json()).toEqual({
       status: 'degraded',
-      mailboxes: [
-        { name: 'agent', state: 'reconnecting' },
-        { name: 'other', state: 'connected' },
-      ],
+      mailboxes: [{ name: 'agent', state: 'reconnecting' }],
     });
     expect((await app.inject({ url: '/docs/json' })).json().paths).toHaveProperty('/v1/messages');
   });

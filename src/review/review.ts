@@ -17,6 +17,8 @@ export interface OutgoingMessage extends MessageDraft {
   cc: string[];
   bcc: string[];
   replyTo?: { from: string | null; subject: string; body_markdown: string };
+  /** The same message is being sent right now by another request. */
+  duplicateInFlight?: boolean;
 }
 
 export interface OutgoingEvent {
@@ -225,7 +227,12 @@ export async function reviewMessage(ctx: MailboxContext, m: OutgoingMessage): Pr
   if (review.rules !== 'off') {
     const findings = checkMessageRules(m);
     const window = review.duplicate_window_minutes * 60_000;
-    if (
+    if (window > 0 && m.duplicateInFlight) {
+      findings.push({
+        rule: 'duplicate',
+        message: 'The same message to the same recipients is being sent right now.',
+      });
+    } else if (
       window > 0 &&
       ctx.store.hasFingerprintSince(ctx.config.name, fingerprint(recipients, m), ctx.now() - window)
     ) {

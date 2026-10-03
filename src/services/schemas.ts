@@ -98,7 +98,18 @@ export const eventShape = {
     .describe('Email addresses to invite; each must be on allow_send_to'),
 };
 export const eventSchema = z.object(eventShape);
-export const eventPatchSchema = eventSchema.partial();
+export const eventPatchSchema = eventSchema.partial().extend({
+  location: z
+    .string()
+    .max(500)
+    .nullable()
+    .optional()
+    .describe('Place or meeting link; null removes it'),
+  description_markdown: longText()
+    .nullable()
+    .optional()
+    .describe('Agenda or notes in Markdown; null removes them'),
+});
 export type EventInput = z.output<typeof eventSchema>;
 export type EventPatch = z.output<typeof eventPatchSchema>;
 

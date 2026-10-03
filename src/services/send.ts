@@ -132,29 +132,56 @@ export async function sendMessage(
   };
   // No review (and no model calls) when the send limit is already reached.
   assertSendCapacity(ctx);
-  // Stage 1 rules and optional stage 2 LLM; throws review_rejected before any send slot is used.
-  const reviewWarnings = await reviewMessage(ctx, {
-    ...draft,
-    to: input.to,
-    cc: input.cc,
-    bcc: input.bcc,
-    replyTo,
-  });
+  // The same message already on its way (review or SMTP still running) counts as a duplicate.
+  const fp = fingerprint(recipients, draft);
+  const sending = inFlight(ctx);
+  const duplicateInFlight = (sending.get(fp) ?? 0) > 0;
+  sending.set(fp, (sending.get(fp) ?? 0) + 1);
+  try {
+    return await reviewAndSend();
+  } finally {
+    const left = (sending.get(fp) ?? 1) - 1;
+    if (left > 0) sending.set(fp, left);
+    else sending.delete(fp);
+  }
 
-  const { messageId, warnings } = await deliver(
-    ctx,
-    {
+  async function reviewAndSend(): Promise<{ message_id: string; warnings: string[] }> {
+    // Stage 1 rules and optional stage 2 LLM; throws review_rejected before any send slot is used.
+    const reviewWarnings = await reviewMessage(ctx, {
+      ...draft,
+      duplicateInFlight,
       to: input.to,
       cc: input.cc,
       bcc: input.bcc,
-      subject,
-      markdown: input.body_markdown,
-      attachments,
-      inReplyTo,
-      references,
-    },
-    'send',
-  );
-  ctx.store.recordFingerprint(ctx.config.name, fingerprint(recipients, draft), ctx.now());
-  return { message_id: messageId, warnings: [...reviewWarnings, ...warnings] };
+      replyTo,
+    });
+
+    const { messageId, warnings } = await deliver(
+      ctx,
+      {
+        to: input.to,
+        cc: input.cc,
+        bcc: input.bcc,
+        subject,
+        markdown: input.body_markdown,
+        attachments,
+        inReplyTo,
+        references,
+      },
+      'send',
+    );
+    ctx.store.recordFingerprint(ctx.config.name, fp, ctx.now());
+    return { message_id: messageId, warnings: [...reviewWarnings, ...warnings] };
+  }
+}
+
+/** Fingerprints of messages being reviewed or sent right now (with count), per mailbox. */
+const sendingByMailbox = new WeakMap<MailboxContext, Map<string, number>>();
+function inFlight(ctx: MailboxContext): Map<string, number> {
+  let map = sendingByMailbox.get(ctx);
+  if (!map) {
+    map = new Map();
+    sendingByMailbox.set(ctx, map);
+  }
+  return map;
 }

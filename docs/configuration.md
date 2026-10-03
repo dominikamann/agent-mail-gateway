@@ -150,7 +150,7 @@ returns the findings as `warnings`, `off` disables them.
 | `missing_subject` | the subject is empty (also `Re:` alone) |
 | `attachment_missing` | the text says "attached", "enclosed", "anbei", "im Anhang", … but nothing is attached |
 | `placeholder` | `{name}`, `{{ field }}`, `[insert …]`, `[Name einfügen]`, `TODO:`, `FIXME:`, "Lorem ipsum" |
-| `duplicate` | the identical message went to the same recipients within `duplicate_window_minutes` |
+| `duplicate` | the identical message went to the same recipients within `duplicate_window_minutes`, or is being sent right now |
 | `event_in_past` | a calendar invitation starts in the past |
 
 **Stage 2 – LLM review (off by default).** Any OpenAI-compatible chat endpoint works; with
@@ -278,7 +278,7 @@ A rejected login never fixes itself, and many mail servers ban an IP after a few
 So the gateway does not retry rejected logins quickly:
 
 - **IMAP:** after a rejected login it waits 15 minutes, then 30, then every 60 minutes, and logs
-  `imap login rejected: check username and password`. `/health` shows the mailbox as `error`.
+  `imap login rejected: check username and password`. `/health` (with the mailbox key) shows it as `error`.
   Network problems (server down, timeouts) are still retried quickly (1 s doubling to 60 s).
 - **SMTP:** after a rejected login no new login is attempted for 15 minutes; sends fail with
   `send_failed` during that time.
