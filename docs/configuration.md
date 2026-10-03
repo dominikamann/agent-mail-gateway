@@ -165,11 +165,14 @@ message — never change, send or redirect it.
 - `on_error: allow` (default) sends without LLM review if the model is unreachable, slow or
   answers nonsense (and says so in `warnings`); `block` refuses to send instead.
 - Stage 2 runs only if stage 1 did not already reject the message.
-- The model sees the message as the recipient will see it (Markdown rendered, HTML entities
-  decoded), not the raw source.
+- Policies see everything a recipient can read: the source text (sent as the plain-text part
+  and in invitations), its rendered form (sent as HTML, entities decoded), and text attachments
+  the agent wrote (`content_text`, or base64 with a text type); invisible format characters
+  (zero-width etc.) are removed first. Files re-attached from received mail are not checked.
 
 **Long messages and model context.** Nothing is ever cut off for policies. Text longer than
-`chunk_chars` is split into overlapping parts and every part is checked; a violation in any
+`chunk_chars` is split into overlapping parts (`chunk_overlap_chars`; keep it larger than the
+longest single item you want caught, e.g. an IBAN or a key) and every part is checked; a violation in any
 part counts. If a message would need more than `max_chunks` parts, policies refuse to send it
 (`policy_too_long`). The quality review only needs the agent's own text and looks at the first
 part.
@@ -179,7 +182,9 @@ Pick `chunk_chars` to fit your model's context window. Ollama uses a small windo
 `chunk_chars: 6000` (about 1,500–2,000 tokens plus the prompt) or give the model more context,
 for example `OLLAMA_CONTEXT_LENGTH=16384` for the Ollama server (or `num_ctx` in a Modelfile),
 and raise `chunk_chars` accordingly (roughly 3–4 characters per token). Fewer, larger parts
-mean fewer requests and faster sends.
+mean fewer requests and faster sends. Parts are checked one after another, so the worst case
+for one send is about `max_chunks × timeout_seconds` (20 × 30 s by default) — lower these if
+your agents' MCP client times out earlier.
 
 **Prompt.** The built-in review criteria are:
 

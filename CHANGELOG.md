@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1]
+
+### Fixed
+
+- Policies check everything a recipient can read again: the source text (plain-text part and
+  invitation description) as well as its rendered form, so content hidden in HTML comments,
+  link definitions or image text is caught; invisible format characters are removed first.
+- Text attachments written by the agent are checked by policies.
+- Attachments: at most 20 per message; files from received messages are loaded once each and
+  the size limit stops loading early; calendar files cannot be re-attached.
+- Policy and quality prompts name the current data fields.
+- Credentials in `review.llm.url` are detected with a URL parser.
+- A failure while recording an invitee's answer no longer keeps a filtered mail in the inbox.
+- `DURATION` for all-day invitations; zero or negative durations are ignored.
+- Text attachments are returned in their declared charset.
+
 ## [0.3.0]
 
 ### Changed

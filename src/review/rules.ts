@@ -8,7 +8,8 @@ export interface Finding {
 export interface MessageDraft {
   subject: string;
   body_markdown: string;
-  attachments: { filename: string; size: number }[];
+  /** `text`: content of a text attachment written by the agent (checked by policies). */
+  attachments: { filename: string; size: number; text?: string }[];
 }
 
 const ATTACHMENT_MENTION =

@@ -32,6 +32,27 @@ function rendered(markdown: string): string {
   return htmlToMarkdown(markdownToHtml(markdown), markdown);
 }
 
+/** Invisible format characters (zero-width etc.) that could split words for the model. */
+const stripInvisible = (text: string) => text.replace(/\p{Cf}/gu, '');
+
+/**
+ * Everything a recipient can read: the raw source (sent as the plain-text part and in
+ * invitations) and its rendered form (sent as HTML, entities decoded), plus text attachments.
+ */
+function sentText(
+  markdown: string,
+  attachments: { filename: string; text?: string }[] = [],
+): string {
+  const source = markdown.trim();
+  const html = rendered(markdown).trim();
+  const forms = html && html !== source ? `${source}\n\n${html}` : source;
+  const files = attachments
+    .filter((a) => a.text)
+    .map((a) => `\n\n--- attachment ${a.filename} ---\n${a.text}`)
+    .join('');
+  return stripInvisible(forms + files);
+}
+
 /** Splits text into overlapping parts so nothing is lost at a boundary. */
 function chunks(text: string, size: number, overlapChars: number): string[] {
   if (text.length <= size) return [text];
@@ -226,8 +247,7 @@ export async function reviewMessage(ctx: MailboxContext, m: OutgoingMessage): Pr
     subject: m.subject,
     attachments: m.attachments.map((a) => ({ filename: a.filename, bytes: a.size })),
   };
-  const sentText = rendered(m.body_markdown);
-  await runPolicies(ctx, header, sentText, recipients, warnings);
+  await runPolicies(ctx, header, sentText(m.body_markdown, m.attachments), recipients, warnings);
 
   const size = ctx.config.review.llm?.chunk_chars ?? 6000;
   await runLlm(
@@ -268,7 +288,7 @@ export async function reviewEvent(ctx: MailboxContext, e: OutgoingEvent): Promis
     unknown
   >;
   const header = { kind: 'calendar invitation', organizer: ctx.config.address, ...rest };
-  await runPolicies(ctx, header, rendered(String(description)), e.recipients, warnings);
+  await runPolicies(ctx, header, sentText(String(description)), e.recipients, warnings);
   const size = ctx.config.review.llm?.chunk_chars ?? 6000;
   await runLlm(
     ctx,

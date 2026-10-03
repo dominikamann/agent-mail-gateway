@@ -41,7 +41,10 @@ the checks outgoing mail must pass.
   "allow_delete": false,
   "max_sends_per_hour": 30,
   "max_attachment_mb": 15,
-  "timezone": "Europe/Berlin"
+  "timezone": "Europe/Berlin",
+  "now": "2026-10-03T09:30:00.000Z",
+  "now_local": "Saturday, 3 October 2026 at 11:30 (Europe/Berlin)",
+  "review": { "rules": "block", "llm_review": "off", "policies": [{ "rule": "Never share financial information." }] }
 }
 ```
 
@@ -110,7 +113,8 @@ accept one of three forms:
 ```
 
 `content_text` is for text files, `from_message` re-attaches a file from a received message
-(the original file name and type are used unless given). Replies to the sender
+(the original file name and type are used unless given; calendar files cannot be re-attached).
+At most 20 attachments per message; the size limit applies to their total. Replies to the sender
 (or the `Reply-To` address); with `reply_all` also to everyone in To and Cc except the mailbox
 itself. Subject (`Re: …`) and threading headers are set automatically. Same response and errors
 as `POST /v1/messages`.

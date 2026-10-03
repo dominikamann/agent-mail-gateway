@@ -63,6 +63,7 @@ export const sendMessageShape = {
   body_markdown: z.string().describe('Message body in Markdown'),
   attachments: z
     .array(attachmentInput)
+    .max(20)
     .default([])
     .describe('Files to attach: text, base64 or a file from a received message'),
   reply_to_id: z
@@ -118,6 +119,7 @@ export const replyShape = {
     .describe('Also reply to everyone in To and Cc of the original'),
   attachments: z
     .array(attachmentInput)
+    .max(20)
     .default([])
     .describe('Files to attach: text, base64 or a file from a received message'),
 };

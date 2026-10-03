@@ -248,8 +248,9 @@ export function parseIcs(text: string, floatingZone = 'UTC'): ParsedIcs | null {
     }
   }
   if (!done || !ev.uid) return null;
-  if (!ev.end && ev.start && ev.duration != null && !ev.allDay) {
-    ev.end = new Date(new Date(ev.start).getTime() + ev.duration).toISOString();
+  if (!ev.end && ev.start && ev.duration != null && ev.duration > 0) {
+    const end = new Date(new Date(ev.start).getTime() + ev.duration);
+    ev.end = ev.allDay ? end.toISOString().slice(0, 10) : end.toISOString();
   }
   return {
     method,

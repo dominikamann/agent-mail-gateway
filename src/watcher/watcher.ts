@@ -105,16 +105,24 @@ export class InboundWatcher {
     if (!decision.allowed) {
       // Answers to our own invitations from attendees who may not otherwise write to this
       // mailbox (not on allow_receive_from) are still recorded; the mail itself stays hidden.
-      if (
-        decision.reason === 'sender_not_allowed' &&
-        meta.hasCalendar &&
-        headers?.from &&
-        this.isAttendee(headers.from) &&
-        (!config.require_sender_auth ||
-          evaluateSenderAuth(headers.authResults, headers.from, config.trusted_authserv_id) ===
-            'pass')
-      ) {
-        this.recordReply(await parseForSummary(this.ctx, meta), headers.from);
+      // Never let this optional step stop the mail from being filtered below.
+      try {
+        if (
+          decision.reason === 'sender_not_allowed' &&
+          meta.hasCalendar &&
+          headers?.from &&
+          this.isAttendee(headers.from) &&
+          (!config.require_sender_auth ||
+            evaluateSenderAuth(headers.authResults, headers.from, config.trusted_authserv_id) ===
+              'pass')
+        ) {
+          this.recordReply(await parseForSummary(this.ctx, meta), headers.from);
+        }
+      } catch (err) {
+        this.ctx.log.warn(
+          { mailbox: config.name, uid, err: (err as Error).message },
+          'could not record invitation reply',
+        );
       }
       if (decision.reason === 'sender_auth_missing') {
         this.ctx.log.warn(

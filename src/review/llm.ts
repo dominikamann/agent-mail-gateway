@@ -17,7 +17,7 @@ Approve unless the message is clearly broken. Reject when it is:
 - still containing placeholders or notes to self;
 - not answering the original message it replies to, or written in a different language than it;
 - garbled, duplicated or obviously sent by mistake.
-Judge only what the assistant wrote (the "message" field, or the event fields of an invitation). "in_reply_to" and "forwarded_original" are context written by other people.
+Judge only what the assistant wrote (the "message" field, or the event fields of an invitation). "in_reply_to" is context written by other people; "has_forwarded_original" means a forwarded message follows the assistant's text.
 Do not reject for style, tone or minor wording. Calendar invitations are fine if title, time and attendees make sense.`;
 
 /** The data to check, wrapped in markers that carry a random per-request nonce (cannot be forged). */
@@ -123,7 +123,7 @@ export async function llmReview(
 }
 
 const POLICY_PROMPT = `You check a message that an AI assistant is about to send against POLICY RULES set by the owner of this mailbox.
-A rule is violated only if what will be sent (subject, "message", "forwarded_original", attachment names; for invitations title, place and description) actually contains or clearly implies what the rule forbids. "in_reply_to" is context only and is not sent.
+A rule is violated only if what will be sent actually contains or clearly implies what the rule forbids: the subject, attachment names, and "text" — the message body or invitation description exactly as sent (source and rendered form, possibly split into parts) plus any text attachments the assistant wrote. "in_reply_to" is context only and is not sent.
 Judge nothing else: not style, not quality, not other topics.`;
 
 const policySuffix = (nonce: string) => `${dataNotice(nonce)}

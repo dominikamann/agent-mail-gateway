@@ -84,6 +84,16 @@ function searchQuery(
   };
 }
 
+/** Decodes a text attachment in its declared charset (e.g. ISO-8859-1 CSVs), UTF-8 otherwise. */
+function decodeText(content: Buffer, contentType: string): string {
+  const charset = /charset="?([\w-]+)"?/i.exec(contentType)?.[1] ?? 'utf-8';
+  try {
+    return new TextDecoder(charset).decode(content);
+  } catch {
+    return content.toString('utf8');
+  }
+}
+
 /** Shown to every MCP client: the essentials of using this mailbox correctly and safely. */
 const SERVER_INSTRUCTIONS = `This server is your own email mailbox, run by an Agent Mail Gateway.
 - Start with get_mailbox_info: it tells you your address, the current date and time, whom you may write to, and the review rules your mail must pass.
@@ -186,7 +196,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
             content: [
               {
                 type: 'text',
-                text: `File ${att.filename} (${att.contentType}):\n\n${att.content.toString('utf8')}`,
+                text: `File ${att.filename} (${att.contentType}):\n\n${decodeText(att.content, att.contentType)}`,
               },
             ],
           };

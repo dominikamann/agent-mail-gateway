@@ -54,9 +54,17 @@ export const mailboxSchema = z
         duplicate_window_minutes: z.coerce.number().int().min(0).default(10),
         llm: z
           .object({
-            url: z.url().refine((u) => !/^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(u), {
-              message: 'must not contain credentials (user:password@); use api_key instead',
-            }),
+            url: z.url().refine(
+              (u) => {
+                try {
+                  const parsed = new URL(u);
+                  return !parsed.username && !parsed.password;
+                } catch {
+                  return false;
+                }
+              },
+              { message: 'must not contain credentials (user:password@); use api_key instead' },
+            ),
             model: z.string().min(1),
             api_key: z.string().min(1).optional(),
             mode: z.enum(['block', 'warn', 'off']).default('warn'),
