@@ -29,6 +29,10 @@ Every error has the same shape:
 
 ### `GET /v1/mailbox`
 
+Also returns `now` (UTC) and `now_local` (in the mailbox time zone) so agents can resolve
+"tomorrow at 14:00", and `review`: `{ rules, llm_review, policies: [{ rule, recipients? }] }` —
+the checks outgoing mail must pass.
+
 ```json
 {
   "address": "youragent@yourmailserver.eu",
@@ -96,7 +100,17 @@ Marks the message as read unless `mark_read=false`.
 
 ### `POST /v1/messages/{id}/reply`
 
-Body `{ "body_markdown": "…", "reply_all": false, "attachments": [] }`. Replies to the sender
+Body `{ "body_markdown": "…", "reply_all": false, "attachments": [] }`. Attachments everywhere
+accept one of three forms:
+
+```json
+{ "filename": "notes.csv", "content_type": "text/csv", "content_text": "a,b\n1,2" }
+{ "filename": "photo.jpg", "content_type": "image/jpeg", "content_base64": "…" }
+{ "from_message": { "id": "1712345678-42", "index": 0 } }
+```
+
+`content_text` is for text files, `from_message` re-attaches a file from a received message
+(the original file name and type are used unless given). Replies to the sender
 (or the `Reply-To` address); with `reply_all` also to everyone in To and Cc except the mailbox
 itself. Subject (`Re: …`) and threading headers are set automatically. Same response and errors
 as `POST /v1/messages`.
@@ -176,7 +190,7 @@ Sends a cancellation to all attendees.
 
 ### `GET /v1/events/{id}`
 
-One event, including `responses`: answers received from attendees, e.g.
+One event (with `start_local`/`end_local` in the event's time zone), including `responses`: answers received from attendees, e.g.
 `{ "you@yourmailserver.eu": "accepted" }` (`accepted`, `declined`, `tentative`, …). Answers are
 picked up automatically when the attendee's calendar replies. Only an attendee's own answer
 counts (from their address, for the current version of the event); when the time changes, all

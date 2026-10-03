@@ -87,6 +87,9 @@ Mail stays on your mail server; the gateway only keeps a small SQLite file with 
 
 ## Quick start
 
+> **Use a dedicated mailbox for each agent** (for example `assistant@yourmailserver.eu`), not your
+> personal one: by default, mail from senders that are not on the allow list is moved to Trash.
+
 1. Get the files:
    ```bash
    mkdir agent-mail-gateway && cd agent-mail-gateway
@@ -100,7 +103,7 @@ Mail stays on your mail server; the gateway only keeps a small SQLite file with 
    ```bash
    docker compose up -d
    curl http://localhost:8080/health
-   curl -H "Authorization: Bearer $AGENT_API_KEY" http://localhost:8080/v1/mailbox
+   curl -H "Authorization: Bearer <the AGENT_API_KEY from .env>" http://localhost:8080/v1/mailbox
    ```
 
 A minimal mailbox entry:
@@ -159,7 +162,8 @@ forwards, invitations and their changes, and comments in invitation answers.
 
 A rule with `recipients` applies only when one of those people receives the message (To, Cc,
 Bcc or invitation attendee). With [Ollama](https://ollama.com) the review runs entirely on your
-own machine; no mail content leaves your server. The built-in review prompt can be replaced or
+own machine; no mail content leaves your server. Long messages are checked in parts — nothing
+is cut off; part size and limits are configurable to fit your model's context window. The built-in review prompt can be replaced or
 extended — see [docs/configuration.md](docs/configuration.md#review-before-sending).
 
 ## Using it

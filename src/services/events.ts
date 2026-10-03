@@ -279,7 +279,6 @@ export function getEvent(ctx: MailboxContext, id: string): EventView {
   return view(r);
 }
 
-/** Stores an attendee's answer (iCalendar REPLY) to one of this mailbox's own invitations. */
 /**
  * Stores an attendee's answer (iCalendar REPLY) to one of this mailbox's own invitations.
  * Only the sender's own answer counts, only if they are a current attendee, and only for the

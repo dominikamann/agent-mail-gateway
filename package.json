@@ -1,6 +1,6 @@
 {
   "name": "agent-mail-gateway",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Self-hosted email gateway that gives each AI agent its own mailbox with allow-list filtering, Markdown conversion, calendar invites, REST and MCP access.",
   "main": "dist/index.js",
   "scripts": {

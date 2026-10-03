@@ -6,6 +6,34 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0]
+
+### Changed
+
+- Policies check long messages in overlapping parts instead of cutting them off; a violation
+  in any part blocks, more than `max_chunks` parts refuses to send. New settings
+  `review.llm.chunk_chars`, `chunk_overlap_chars`, `max_chunks`.
+- The review model sees the text as recipients will see it (rendered, entities decoded).
+- Custom `review.llm.prompt`s now receive the message as JSON in nonce-marked data blocks
+  (since 0.2.1) instead of `--- MESSAGE START ---` text.
+
+### Added
+
+- MCP server instructions with the essentials for any MCP client; every id/index argument
+  is described.
+- `get_mailbox_info` returns `now`, `now_local` and the active review setup incl. policies.
+- Events and received invitations show `start_local` (and `end_local` for events).
+- Attachments as `content_text` or `from_message`; `get_attachment` returns text files as text.
+- Answers from invitees who are not on `allow_receive_from` are recorded (the mail itself stays
+  filtered).
+- `DURATION` in received invitations; times without a zone are read in the mailbox time zone.
+
+### Fixed
+
+- `review.llm.url` with credentials is rejected; error texts for the agent contain no hosts or URLs.
+- Example config starts without the webhook secret; webhook path matches Hermes routes.
+- Replies don't stack `Re:` on `AW:`, `SV:` etc.; moving only an event's start keeps its duration.
+
 ## [0.2.1]
 
 ### Fixed

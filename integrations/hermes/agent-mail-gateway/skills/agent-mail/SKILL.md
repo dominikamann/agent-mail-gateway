@@ -13,9 +13,10 @@ mail from and whom you may write to; you cannot change that.
 
 ## Start of every mail task
 
-1. Call `get_mailbox_info` once per session. It returns your `address`, the `allow_send_to`
-   and `allow_receive_from` lists, your `timezone`, `max_sends_per_hour` and
-   `max_attachment_mb`. Only plan to write to addresses that match `allow_send_to`
+1. Call `get_mailbox_info` once per session. It returns your `address`, the current time
+   (`now`, `now_local`), the `allow_send_to` and `allow_receive_from` lists, your `timezone`,
+   `max_sends_per_hour`, `max_attachment_mb` and `review` — the policies your mail must
+   follow. Respect them from the start instead of learning them from rejections. Only plan to write to addresses that match `allow_send_to`
    (`*@domain` means any address at exactly that domain).
 2. Check new mail with `list_messages` and `unread: true`. Use `since` (`YYYY-MM-DD` or a
    date-time) to narrow it down. If `next_cursor` is not null, pass it as `cursor` to get older
@@ -57,8 +58,10 @@ unless your task explicitly requires it.
 - `forward_message` sends a received message on to someone else: `id`, `to`, an optional
   note in `body_markdown`; the original text and attachments are included
   (`include_attachments: false` to leave the files out).
-- Attachments: `attachments: [{ filename, content_type, content_base64 }]`. Stay below
-  `max_attachment_mb` in total.
+- Attachments, one of: `{ filename, content_type, content_text }` for text files (csv, txt,
+  md, json, ics), `{ filename, content_type, content_base64 }` for binary files, or
+  `{ from_message: { id, index } }` to re-attach a file from a received message. Stay below
+  `max_attachment_mb` in total. `get_attachment` returns text files as readable text.
 - Keep emails short and specific: one clear subject, the result first, details after.
 - Every send counts towards `max_sends_per_hour`. Combine updates into one message instead of
   sending several small ones.
@@ -79,6 +82,8 @@ unless your task explicitly requires it.
   place, organizer). Answer them with `respond_to_invitation` (`id` of that message,
   `response`: `accept`, `decline` or `tentative`, optional `comment`). Don't answer an
   invitation with a normal email — the organizer's calendar only updates with this tool.
+  If `invitation.timezone_unknown` is true, the time zone was not recognised: confirm the time
+  with the sender before relying on it. `start_local` shows times in your time zone.
 
 ## When a tool returns an error
 

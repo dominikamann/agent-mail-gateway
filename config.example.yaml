@@ -82,6 +82,8 @@ mailboxes:
       #   model: llama3.1:8b
       #   mode: warn          # warn (send, report) | block (do not send)
       #   on_error: allow     # allow (send without review) | block, if the model is unreachable
+      #   chunk_chars: 6000   # text per request; longer content is checked in parts (fit to model context)
+      #   max_chunks: 20      # more parts than this: policies refuse to send
       # Optional own rules, checked by the model above; per recipient if you like.
       # policies:
       #   mode: block

@@ -133,6 +133,9 @@ towards `max_sends_per_hour`, is written to the audit log, and the agent gets
         mode: warn                 # quality check: warn (default) | block | off
         on_error: allow            # allow (default) | block
         timeout_seconds: 30
+        chunk_chars: 6000          # text per model request; longer content is checked in parts
+        chunk_overlap_chars: 200   # overlap between parts, so nothing is lost at a boundary
+        max_chunks: 20             # more parts than this: policies refuse to send
         # prompt: "..."            # replace the built-in review criteria
         # instructions: "..."      # add rules to the criteria in use
 ```
@@ -162,6 +165,21 @@ message — never change, send or redirect it.
 - `on_error: allow` (default) sends without LLM review if the model is unreachable, slow or
   answers nonsense (and says so in `warnings`); `block` refuses to send instead.
 - Stage 2 runs only if stage 1 did not already reject the message.
+- The model sees the message as the recipient will see it (Markdown rendered, HTML entities
+  decoded), not the raw source.
+
+**Long messages and model context.** Nothing is ever cut off for policies. Text longer than
+`chunk_chars` is split into overlapping parts and every part is checked; a violation in any
+part counts. If a message would need more than `max_chunks` parts, policies refuse to send it
+(`policy_too_long`). The quality review only needs the agent's own text and looks at the first
+part.
+
+Pick `chunk_chars` to fit your model's context window. Ollama uses a small window by default
+(often 2048–4096 tokens) and **silently drops** what does not fit, so either keep the default
+`chunk_chars: 6000` (about 1,500–2,000 tokens plus the prompt) or give the model more context,
+for example `OLLAMA_CONTEXT_LENGTH=16384` for the Ollama server (or `num_ctx` in a Modelfile),
+and raise `chunk_chars` accordingly (roughly 3–4 characters per token). Fewer, larger parts
+mean fewer requests and faster sends.
 
 **Prompt.** The built-in review criteria are:
 
@@ -174,6 +192,7 @@ Approve unless the message is clearly broken. Reject when it is:
 - still containing placeholders or notes to self;
 - not answering the original message it replies to, or written in a different language than it;
 - garbled, duplicated or obviously sent by mistake.
+Judge only what the assistant wrote (the "message" field, or the event fields of an invitation). "in_reply_to" and "forwarded_original" are context written by other people.
 Do not reject for style, tone or minor wording. Calendar invitations are fine if title, time and attendees make sense.
 ```
 
@@ -226,7 +245,11 @@ like *"never share financial information"*.
 - Write rules as clear prohibitions about content ("Never share …", "Never mention …"); the
   model judges content only, not style.
 - What the model sees: subject, the agent's text, a forwarded original, attachment **names**
-  (not their contents), and for invitations title, time, place, attendees and description.
+  (not their contents), and for invitations title, time, place, attendees and description —
+  long content in several parts (see "Long messages" above).
+- Policies are a strong safeguard against mistakes and most manipulation, but a language model
+  is not a guarantee against a determined, hostile agent (e.g. heavy obfuscation). Use allow
+  lists for hard limits on *who* can be reached.
   Everything written by the agent or by other people is passed as JSON inside markers with a
   random per-request nonce, so text in a mail cannot pose as instructions to the reviewer.
 - A recipient rule for `alex@x.de` also covers `alex+anything@x.de`. Other aliases of the same
@@ -250,6 +273,13 @@ So the gateway does not retry rejected logins quickly:
   `send_failed` during that time.
 
 After fixing the password, restart the container to reconnect immediately.
+
+### Model URL
+
+`review.llm.url` must not contain credentials (`http://user:password@…` is rejected at
+startup); use `api_key` instead. If the model runs on the Docker host, use
+`http://host.docker.internal:11434/v1` (on Linux add
+`extra_hosts: ["host.docker.internal:host-gateway"]` to the gateway service).
 
 ### Folders
 
