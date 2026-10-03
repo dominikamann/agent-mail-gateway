@@ -2,7 +2,7 @@ import { buildReplyIcs } from '../calendar/ics.js';
 import { GatewayError } from '../errors.js';
 import { FORWARD_SEPARATOR, reviewMessage } from '../review/review.js';
 import type { MailboxContext } from './context.js';
-import { deliver } from './deliver.js';
+import { assertSendCapacity, deliver } from './deliver.js';
 import { loadAllowed } from './messages.js';
 import type { SendMessageInput } from './schemas.js';
 import { sendMessage } from './send.js';
@@ -65,7 +65,11 @@ export async function forwardMessage(
     .join('\n\n');
   const attachments = input.include_attachments
     ? parsed.attachments
-        .filter((a) => !/^(text\/calendar|application\/ics)/i.test(a.contentType))
+        .filter(
+          (a) =>
+            !/^(text\/calendar|application\/ics)/i.test(a.contentType) &&
+            !/\.ics$/i.test(a.filename),
+        )
         .map((a) => ({
           filename: a.filename,
           content_type: a.contentType,
@@ -102,6 +106,7 @@ export async function respondToInvitation(
   }
   // A comment is free text written by the agent: it goes through the same review as any mail.
   const note = comment?.trim() || null;
+  assertSendCapacity(ctx);
   const reviewWarnings = note
     ? await reviewMessage(ctx, {
         to: [inv.organizer],

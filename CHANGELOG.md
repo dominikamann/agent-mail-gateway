@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.2]
+
+### Fixed
+
+- Policies never fall back to the Markdown source for the rendered form: text that cannot be
+  converted is tag-stripped with HTML entities decoded.
+- Attachments the agent writes are policy-checked whenever their bytes are text, whatever the
+  declared type; new `review.policies.binary_attachments: allow|block` for the others.
+- Message and description texts are limited to 512,000 characters; texts the renderer cannot
+  handle return `validation_error` instead of stalling or crashing.
+- The send limit is checked before any review model is called.
+- Invitations are policy-checked as the whole rendered mail (title, time, place, description).
+- Forwarding drops `.ics` files by name as well as by type.
+- Attendee answers are limited to the standard values.
+- Webhooks do not follow redirects (the signed payload is never re-sent elsewhere).
+- Old rows are pruned hourly (sends, fingerprints, audit after 180 days, finished webhooks after 30 days).
+- Unexpected errors no longer reach the agent with internal details; a dropped IMAP connection
+  returns `mailbox_unavailable` (503).
+- Release workflow: least-privilege permissions per job, tag must match package.json and
+  server.json, pinned mcp-publisher.
+
 ## [0.3.1]
 
 ### Fixed

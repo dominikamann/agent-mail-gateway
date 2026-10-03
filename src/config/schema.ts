@@ -85,6 +85,8 @@ export const mailboxSchema = z
           .object({
             mode: z.enum(['block', 'warn']).default('block'),
             on_error: z.enum(['block', 'allow']).default('block'),
+            /** Attachments the agent wrote that are not text (policies cannot read them). */
+            binary_attachments: z.enum(['allow', 'block']).default('allow'),
             rules: z
               .array(
                 z

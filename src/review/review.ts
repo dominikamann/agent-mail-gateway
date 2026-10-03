@@ -29,7 +29,8 @@ export interface OutgoingEvent {
 
 /** What the recipient will actually see: Markdown rendered and read back (decodes entities etc.). */
 function rendered(markdown: string): string {
-  return htmlToMarkdown(markdownToHtml(markdown), markdown);
+  // No source fallback here: if conversion gives up, tags are stripped and entities decoded.
+  return htmlToMarkdown(markdownToHtml(markdown));
 }
 
 /** Invisible format characters (zero-width etc.) that could split words for the model. */
@@ -244,9 +245,27 @@ export async function reviewMessage(ctx: MailboxContext, m: OutgoingMessage): Pr
     to: m.to,
     cc: m.cc,
     bcc: m.bcc,
-    subject: m.subject,
-    attachments: m.attachments.map((a) => ({ filename: a.filename, bytes: a.size })),
+    subject: stripInvisible(m.subject),
+    attachments: m.attachments.map((a) => ({
+      filename: stripInvisible(a.filename),
+      bytes: a.size,
+    })),
   };
+  const { policies } = ctx.config.review;
+  const binary = m.attachments.filter((a) => a.binary);
+  if (policies?.binary_attachments === 'block' && binary.length > 0) {
+    reject(
+      ctx,
+      'policy',
+      [
+        {
+          rule: 'policy_binary_attachment',
+          message: `Policies cannot read ${binary.map((a) => a.filename).join(', ')}; only text attachments are allowed for this mailbox.`,
+        },
+      ],
+      recipients,
+    );
+  }
   await runPolicies(ctx, header, sentText(m.body_markdown, m.attachments), recipients, warnings);
 
   const size = ctx.config.review.llm?.chunk_chars ?? 6000;

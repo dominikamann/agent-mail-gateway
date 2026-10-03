@@ -87,6 +87,7 @@ mailboxes:
       # Optional own rules, checked by the model above; per recipient if you like.
       # policies:
       #   mode: block
+      #   binary_attachments: allow   # allow | block: refuse non-text attachments the agent wrote
       #   rules:
       #     - rule: Never share financial information such as revenue, invoices or salaries.
       #     - rule: Never mention gifts or presents.

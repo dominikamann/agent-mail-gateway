@@ -157,6 +157,7 @@ ${review}`;
     expect(cfg.mailboxes[0]!.review.policies).toEqual({
       mode: 'block',
       on_error: 'block',
+      binary_attachments: 'allow',
       rules: [
         { rule: 'No finance' },
         { rule: 'No gifts', recipients: ['alex@example.org'], mode: 'warn' },

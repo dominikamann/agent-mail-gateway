@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+/** Upper bound for text written by the agent (keeps rendering and review time bounded). */
+const MAX_TEXT = 512_000;
+const longText = () => z.string().max(MAX_TEXT, `at most ${MAX_TEXT} characters`);
+
 export const dateTimeString = z
   .string()
   .regex(
@@ -60,7 +64,7 @@ export const sendMessageShape = {
   cc: z.array(email).default([]).describe('Copy recipients; each must be on allow_send_to'),
   bcc: z.array(email).default([]).describe('Hidden recipients; each must be on allow_send_to'),
   subject: z.string().max(998).describe('Subject line'),
-  body_markdown: z.string().describe('Message body in Markdown'),
+  body_markdown: longText().describe('Message body in Markdown'),
   attachments: z
     .array(attachmentInput)
     .max(20)
@@ -87,7 +91,7 @@ export const eventShape = {
     .optional()
     .describe('IANA zone for times without offset; defaults to the mailbox timezone'),
   location: z.string().max(500).optional().describe('Place or meeting link'),
-  description_markdown: z.string().optional().describe('Agenda or notes in Markdown'),
+  description_markdown: longText().optional().describe('Agenda or notes in Markdown'),
   attendees: z
     .array(email)
     .min(1)
@@ -110,9 +114,9 @@ export const searchShape = {
 };
 
 export const replyShape = {
-  body_markdown: z
-    .string()
-    .describe('Reply text in Markdown; the original is not quoted automatically'),
+  body_markdown: longText().describe(
+    'Reply text in Markdown; the original is not quoted automatically',
+  ),
   reply_all: z
     .boolean()
     .default(false)
@@ -129,13 +133,13 @@ export const forwardShape = {
   to: z.array(email).min(1).describe('Recipients; each must be on allow_send_to'),
   cc: z.array(email).default([]).describe('Copy recipients; each must be on allow_send_to'),
   bcc: z.array(email).default([]).describe('Hidden recipients; each must be on allow_send_to'),
-  body_markdown: z.string().optional().describe('Your note above the forwarded message'),
+  body_markdown: longText().optional().describe('Your note above the forwarded message'),
   include_attachments: z.boolean().default(true).describe('Also forward the original attachments'),
 };
 export const forwardSchema = z.object(forwardShape);
 
 export const rsvpShape = {
   response: z.enum(['accept', 'decline', 'tentative']).describe('Your answer to the invitation'),
-  comment: z.string().optional().describe('Optional message to the organizer'),
+  comment: z.string().max(20_000).optional().describe('Optional message to the organizer'),
 };
 export const rsvpSchema = z.object(rsvpShape);

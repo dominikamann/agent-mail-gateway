@@ -9,7 +9,7 @@ export interface MessageDraft {
   subject: string;
   body_markdown: string;
   /** `text`: content of a text attachment written by the agent (checked by policies). */
-  attachments: { filename: string; size: number; text?: string }[];
+  attachments: { filename: string; size: number; text?: string; binary?: boolean }[];
 }
 
 const ATTACHMENT_MENTION =

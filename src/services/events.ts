@@ -6,7 +6,13 @@ import { isAllowed, normalizeAddress } from '../policy/address.js';
 import { reviewEvent } from '../review/review.js';
 import type { EventRecord } from '../store/store.js';
 import type { MailboxContext } from './context.js';
-import { assertRecipientsAllowed, deliver, releaseSends, reserveSends } from './deliver.js';
+import {
+  assertRecipientsAllowed,
+  assertSendCapacity,
+  deliver,
+  releaseSends,
+  reserveSends,
+} from './deliver.js';
 import type { EventInput, EventPatch } from './schemas.js';
 
 export interface EventView {
@@ -130,7 +136,8 @@ function reviewOf(
       where: r.location,
       attendees: r.attendees,
       ...(cancelledFor.length ? { cancellation_sent_to: cancelledFor } : {}),
-      description: r.description ?? '',
+      // The invitation mail as sent (title, time, place and description, rendered by policies).
+      description: body(r),
     },
   });
 }
@@ -163,6 +170,7 @@ export async function createEvent(ctx: MailboxContext, input: EventInput): Promi
     createdAt: now,
     updatedAt: now,
   };
+  assertSendCapacity(ctx);
   const reviewWarnings = await reviewOf(ctx, rec);
   const warnings = [
     ...reviewWarnings,
@@ -216,6 +224,7 @@ export async function updateEvent(
     old.attendees.filter((a) => !attendees.includes(a)),
   );
   // Reserve the update and the cancellation together so a parallel send cannot take a slot.
+  assertSendCapacity(ctx, removed.to.length > 0 ? 2 : 1);
   const reviewWarnings = await reviewOf(ctx, rec, removed.to);
   const [requestSlot, cancelSlot] = reserveSends(ctx, removed.to.length > 0 ? 2 : 1);
 
@@ -284,6 +293,8 @@ export function getEvent(ctx: MailboxContext, id: string): EventView {
  * Only the sender's own answer counts, only if they are a current attendee, and only for the
  * current version of the event (answers to an older time are ignored).
  */
+const PARTSTATS = new Set(['accepted', 'declined', 'tentative', 'delegated', 'needs-action']);
+
 export function recordResponse(
   ctx: MailboxContext,
   reply: { uid: string; sequence: number; from: string | null },
@@ -294,7 +305,8 @@ export function recordResponse(
   if (!rec || !from || rec.status === 'cancelled') return false;
   if (!rec.attendees.includes(from) || reply.sequence < rec.sequence) return false;
   const own = answers.find((a) => a.email.toLowerCase() === from);
-  if (!own) return false;
+  // Only standard answers: the value comes from outside and is shown to the agent.
+  if (!own || !PARTSTATS.has(own.status.toLowerCase())) return false;
   const responses = { ...(rec.responses ?? {}), [from]: own.status.toLowerCase() };
   ctx.store.saveEvent({ ...rec, responses, updatedAt: ctx.now() });
   return true;

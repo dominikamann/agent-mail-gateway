@@ -1,8 +1,10 @@
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { hasZodFastifySchemaValidationErrors } from 'fastify-type-provider-zod';
-import { GatewayError } from '../errors.js';
+import { asGatewayError, GatewayError } from '../errors.js';
 
 export function errorHandler(err: FastifyError | Error, req: FastifyRequest, reply: FastifyReply) {
+  const known = asGatewayError(err);
+  if (known) err = known;
   if (err instanceof GatewayError) {
     const retry = err.details.retry_after_seconds;
     if (typeof retry === 'number') reply.header('retry-after', String(retry));

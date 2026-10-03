@@ -3,13 +3,18 @@ on:
   push:
     tags: ['v*']
 permissions:
-  contents: write
-  packages: write
+  contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          SRV=$(node -p "require('./server.json').version")
+          test "$TAG" = "$PKG" && test "$TAG" = "$SRV" || { echo "tag $TAG, package.json $PKG, server.json $SRV"; exit 1; }
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -21,6 +26,9 @@ jobs:
   image:
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -64,7 +72,7 @@ jobs:
           mv server.tmp server.json
       - name: Install mcp-publisher
         run: |
-          curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          curl -sL "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
       - name: Publish to the MCP Registry
         run: |
           ./mcp-publisher login github-oidc

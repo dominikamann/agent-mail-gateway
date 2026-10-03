@@ -85,6 +85,8 @@ export class WebhookDispatcher {
           'x-webhook-signature-v2': signature.slice('sha256='.length),
         },
         body: job.payload,
+        // Never re-send the signed payload to wherever a redirect points.
+        redirect: 'manual',
         signal: AbortSignal.timeout(10_000),
       });
       ok = res.ok;

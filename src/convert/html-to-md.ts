@@ -1,3 +1,4 @@
+import { decodeHTML } from 'entities';
 import TurndownService from 'turndown';
 
 const MAX_HTML_CHARS = 512_000;
@@ -108,7 +109,8 @@ function tidy(text: string): string {
  * nested HTML falls back to the plain-text part, or to the HTML with tags stripped.
  */
 export function htmlToMarkdown(html: string, fallbackText?: string): string {
-  const fallback = () => tidy(fallbackText?.trim() || stripTags(html));
+  // The tag-stripped fallback decodes entities too, so it shows what a reader would see.
+  const fallback = () => tidy(fallbackText?.trim() || decodeHTML(stripTags(html)));
   if (html.length > MAX_HTML_CHARS || tooDeep(html)) return fallback();
   try {
     return tidy(turndown.turndown(html.replace(/[ \t\r\n ]{200,}/g, ' ')));

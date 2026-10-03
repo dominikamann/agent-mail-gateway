@@ -1,9 +1,29 @@
 import { GatewayError } from '../errors.js';
 import { fingerprint, reviewMessage } from '../review/review.js';
 import type { MailboxContext } from './context.js';
-import { assertRecipientsAllowed, deliver } from './deliver.js';
+import { assertRecipientsAllowed, assertSendCapacity, deliver } from './deliver.js';
 import { loadAllowed } from './messages.js';
 import type { AttachmentInput, SendMessageInput } from './schemas.js';
+
+/** The content as text if it is UTF-8 or UTF-16 text (few control characters), else null. */
+function asText(content: Buffer): string | null {
+  let text: string;
+  try {
+    if (content[0] === 0xff && content[1] === 0xfe)
+      text = new TextDecoder('utf-16le', { fatal: true }).decode(content);
+    else if (content[0] === 0xfe && content[1] === 0xff)
+      text = new TextDecoder('utf-16be', { fatal: true }).decode(content);
+    else text = new TextDecoder('utf-8', { fatal: true }).decode(content);
+  } catch {
+    return null;
+  }
+  let control = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c < 9 || (c > 13 && c < 32)) control++;
+  }
+  return control <= text.length * 0.01 ? text : null;
+}
 
 const CALENDAR = /^(text\/calendar|application\/ics)/i;
 const tooLarge = (ctx: MailboxContext) =>
@@ -17,7 +37,13 @@ const tooLarge = (ctx: MailboxContext) =>
 async function resolveAttachments(ctx: MailboxContext, list: AttachmentInput[]) {
   const limit = ctx.config.max_attachment_mb * 1024 * 1024;
   const loaded = new Map<string, Awaited<ReturnType<typeof loadAllowed>>>();
-  const out: { filename: string; contentType: string; content: Buffer; text?: string }[] = [];
+  const out: {
+    filename: string;
+    contentType: string;
+    content: Buffer;
+    text?: string;
+    binary?: boolean;
+  }[] = [];
   let total = 0;
   for (const a of list) {
     if (a.from_message) {
@@ -48,13 +74,13 @@ async function resolveAttachments(ctx: MailboxContext, list: AttachmentInput[]) 
       });
     } else {
       const content = Buffer.from(a.content_base64!, 'base64');
-      const type = a.content_type ?? 'application/octet-stream';
-      const isText = /^text\//i.test(type) || /^application\/(json|xml|csv)/i.test(type);
+      const text = asText(content);
       out.push({
         filename: a.filename!,
-        contentType: type,
+        contentType: a.content_type ?? 'application/octet-stream',
         content,
-        ...(isText ? { text: content.toString('utf8') } : {}),
+        // Whatever the declared type: if it reads as text, policies check it.
+        ...(text !== null ? { text } : { binary: true }),
       });
     }
     total += out[out.length - 1]!.content.length;
@@ -94,8 +120,11 @@ export async function sendMessage(
       filename: a.filename,
       size: a.content.length,
       ...(a.text !== undefined ? { text: a.text } : {}),
+      ...(a.binary ? { binary: true } : {}),
     })),
   };
+  // No review (and no model calls) when the send limit is already reached.
+  assertSendCapacity(ctx);
   // Stage 1 rules and optional stage 2 LLM; throws review_rejected before any send slot is used.
   const reviewWarnings = await reviewMessage(ctx, {
     ...draft,

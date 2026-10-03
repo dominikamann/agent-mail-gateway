@@ -57,6 +57,9 @@ export async function startGateway(
     log,
   });
   dispatcher.start();
+  store.prune(Date.now());
+  const pruneTimer = setInterval(() => store.prune(Date.now()), 3_600_000);
+  pruneTimer.unref();
 
   if (opts.listen !== false) {
     await app.listen({ host: '0.0.0.0', port: opts.port ?? config.server.port });
@@ -70,6 +73,7 @@ export async function startGateway(
     app,
     gateway,
     async stop() {
+      clearInterval(pruneTimer);
       await app.close();
       await Promise.all(watchers.map((w) => w.stop()));
       await dispatcher.stop();

@@ -3,7 +3,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { resolveSince } from '../calendar/time.js';
-import { GatewayError } from '../errors.js';
+import { asGatewayError } from '../errors.js';
 import { authenticate } from '../http/auth.js';
 import { forwardMessage, replyMessage, respondToInvitation } from '../services/compose.js';
 import type { MailboxContext } from '../services/context.js';
@@ -48,13 +48,18 @@ async function run(fn: () => Promise<ToolResult>): Promise<ToolResult> {
   try {
     return await fn();
   } catch (err) {
-    if (err instanceof GatewayError) {
+    const known = asGatewayError(err);
+    if (known) {
       return {
-        ...json({ error: err.code, message: err.message, details: err.details }),
+        ...json({ error: known.code, message: known.message, details: known.details }),
         isError: true,
       };
     }
-    throw err;
+    // Unexpected errors: no internal details (hosts, paths, stack) towards the agent.
+    return {
+      ...json({ error: 'internal_error', message: 'Internal error; try again later', details: {} }),
+      isError: true,
+    };
   }
 }
 

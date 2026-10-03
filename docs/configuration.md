@@ -197,7 +197,7 @@ Approve unless the message is clearly broken. Reject when it is:
 - still containing placeholders or notes to self;
 - not answering the original message it replies to, or written in a different language than it;
 - garbled, duplicated or obviously sent by mistake.
-Judge only what the assistant wrote (the "message" field, or the event fields of an invitation). "in_reply_to" and "forwarded_original" are context written by other people.
+Judge only what the assistant wrote (the "message" field, or the event fields of an invitation). "in_reply_to" is context written by other people; "has_forwarded_original" means a forwarded message follows the assistant's text.
 Do not reject for style, tone or minor wording. Calendar invitations are fine if title, time and attendees make sense.
 ```
 
@@ -249,9 +249,14 @@ like *"never share financial information"*.
   is not sent to the model.
 - Write rules as clear prohibitions about content ("Never share …", "Never mention …"); the
   model judges content only, not style.
-- What the model sees: subject, the agent's text, a forwarded original, attachment **names**
-  (not their contents), and for invitations title, time, place, attendees and description —
-  long content in several parts (see "Long messages" above).
+- What the model sees: subject, attachment names, the text as sent (see above), text
+  attachments the agent wrote (any attachment whose bytes are text, whatever its declared
+  type), a forwarded original, and for invitations the whole invitation mail (title, time,
+  place, description) — long content in several parts (see "Long messages" above).
+- Attachments the agent wrote that are not text (images, PDFs, ...) cannot be read by the
+  model. They are allowed by default; set `policies.binary_attachments: block` to refuse them
+  whenever policies apply. Files re-attached from received mail (`from_message`) are not
+  checked; forwarded attachments are (they become part of the forwarded content).
 - Policies are a strong safeguard against mistakes and most manipulation, but a language model
   is not a guarantee against a determined, hostile agent (e.g. heavy obfuscation). Use allow
   lists for hard limits on *who* can be reached.

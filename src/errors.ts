@@ -37,3 +37,19 @@ export class GatewayError extends Error {
     return STATUS[this.code];
   }
 }
+
+/** Maps known low-level errors (e.g. a dropped IMAP connection) to gateway errors. */
+export function asGatewayError(err: unknown): GatewayError | null {
+  if (err instanceof GatewayError) return err;
+  const e = err as { code?: string; message?: string } | null;
+  if (
+    e?.code === 'NoConnection' ||
+    /connection not available|socket (hang up|closed)/i.test(e?.message ?? '')
+  ) {
+    return new GatewayError(
+      'mailbox_unavailable',
+      'The mail server connection was lost; try again shortly',
+    );
+  }
+  return null;
+}

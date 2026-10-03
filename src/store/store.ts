@@ -172,6 +172,17 @@ export class Store {
     );
   }
 
+  /** Removes rows nobody needs anymore so the database does not grow forever. */
+  prune(now: number): void {
+    const day = 86_400_000;
+    this.db.prepare('DELETE FROM sends WHERE at < ?').run(now - 2 * 3_600_000);
+    this.db.prepare('DELETE FROM fingerprints WHERE at < ?').run(now - 7 * day);
+    this.db.prepare('DELETE FROM audit WHERE at < ?').run(now - 180 * day);
+    this.db
+      .prepare(`DELETE FROM webhooks WHERE status != 'pending' AND next_attempt_at < ?`)
+      .run(now - 30 * day);
+  }
+
   saveEvent(rec: EventRecord): void {
     this.db
       .prepare(

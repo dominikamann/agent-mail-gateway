@@ -28,6 +28,11 @@
   subject, date and a 200-character preview — never the full body or attachments.
 - **Blocked mail is never downloaded.** Policy is decided on the headers alone; bodies of
   filtered messages are not fetched, and messages with unparsable headers count as filtered.
+  The one exception: a calendar reply (up to 1 MB) from an authenticated attendee of one of
+  the mailbox's own events is read to record their answer — the message itself stays hidden.
+- **Bounded work per request.** Message and description texts are limited to 512,000
+  characters, at most 20 attachments per message, and the send limit is checked before any
+  review model is called.
 
 ## Sender spoofing
 
