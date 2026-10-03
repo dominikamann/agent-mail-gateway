@@ -186,7 +186,8 @@ UTC `start`/`end`, `sequence` and `status`.
 ### `PATCH /v1/events/{id}`
 
 Any subset of the fields above; `location` or `description_markdown` set to `null` removes it.
-Changes to the same event are applied one after another. All attendees receive an updated invitation (the calendar
+Changes to the same event are applied one after another, so each gets its own `sequence`;
+answers that arrive meanwhile are kept unless the time changes. All attendees receive an updated invitation (the calendar
 entry is updated in place); attendees removed from the list receive a cancellation.
 
 ### `DELETE /v1/events/{id}`
@@ -288,7 +289,7 @@ REST.
 | `delete_message` | `id` |
 | `send_message` | `to`, `cc?`, `bcc?`, `subject`, `body_markdown`, `attachments?`, `reply_to_id?` |
 | `create_event` | `title`, `start`, `end`, `timezone?`, `location?`, `description_markdown?`, `attendees` |
-| `update_event` | `id` plus any event field |
+| `update_event` | `id` plus any event field (`location` / `description_markdown`: `null` removes it) |
 | `cancel_event` | `id` |
 | `get_event` | `id` — includes attendee `responses` |
 | `list_events` | — |

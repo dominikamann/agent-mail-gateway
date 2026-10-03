@@ -103,7 +103,7 @@ Mail stays on your mail server; the gateway only keeps a small SQLite file with 
 4. Start it and check:
    ```bash
    docker compose up -d
-   curl http://localhost:8080/health
+   curl http://localhost:8080/health   # {"status":"ok"}; with a key also that mailbox's state
    curl -H "Authorization: Bearer <the AGENT_API_KEY from .env>" http://localhost:8080/v1/mailbox
    ```
 

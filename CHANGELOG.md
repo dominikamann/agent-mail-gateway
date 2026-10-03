@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Documentation
+
+- Security model: health endpoint, webhook isolation, duplicate protection and supply chain.
+
 ## [0.3.3]
 
 ### Fixed

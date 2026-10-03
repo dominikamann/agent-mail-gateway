@@ -17,7 +17,9 @@
   including direct reads by id (`404`). By default it is moved to Trash.
 - **Outbound enforcement.** Every recipient and attendee must be on `allow_send_to`; a single
   violation rejects the entire request.
-- **Rate limit.** `max_sends_per_hour` stops a looping agent from sending floods.
+- **Rate limit.** `max_sends_per_hour` stops a looping agent from sending floods; the
+  duplicate check (rules review) also stops the same message being sent twice, including two
+  identical requests at the same time.
 - **Sanitised output.** Markdown written by agents is rendered and sanitised before sending;
   scripts and dangerous links are stripped. Incoming HTML is converted to Markdown, never
   passed through.
@@ -29,7 +31,12 @@
 - **Blocked mail is never downloaded.** Policy is decided on the headers alone; bodies of
   filtered messages are not fetched, and messages with unparsable headers count as filtered.
   The one exception: a calendar reply (up to 1 MB) from an attendee of one of the mailbox's
-  own events (sender-authenticated when `require_sender_auth` is on) is read to record their answer — the message itself stays hidden.
+  own events (sender-authenticated when `require_sender_auth` is on) is read to record their
+  answer — the message itself stays hidden.
+- **Nothing about mailboxes without a key.** `/health` without a key returns only the overall
+  status; mailbox names and connection states are shown only for the key's own mailbox.
+- **Isolated webhooks.** Each mailbox's webhooks are delivered independently, redirects are not
+  followed, and a failing endpoint only delays its own mailbox.
 - **Bounded work per request.** Message and description texts are limited to 512,000
   characters, at most 20 attachments per message, and the send limit is checked before any
   review model is called.
@@ -48,6 +55,14 @@ disable the option, and allow-lists then trust the `From` header as-is.
 - Generate keys with `openssl rand -hex 32` and rotate them by editing `.env` and restarting.
 - Mount `config.yaml` read-only and keep `.env` out of version control.
 - The container runs as a non-root user and only writes to `/data`.
+
+## Supply chain
+
+- GitHub Actions are pinned to commit SHAs and the Docker base image to a digest; Dependabot
+  proposes updates weekly (actions, base image, npm).
+- Workflows run with read-only permissions; only the release jobs may push the image, create
+  the GitHub release and publish to the MCP Registry (via GitHub OIDC, no stored tokens).
+- A release only runs if the tag matches the version in `package.json` and `server.json`.
 
 ## Reporting vulnerabilities
 
