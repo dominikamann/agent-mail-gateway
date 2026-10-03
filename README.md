@@ -36,7 +36,8 @@ The gateway keeps the password to itself and enforces your rules on every reques
 ## Features
 
 **Mailbox access**
-- List, search, read, mark, delete; attachments in and out.
+- List, search, read, mark, delete; attachments in and out — as text, base64 or straight from
+  a received message, so agents never have to juggle base64 for a CSV.
 - Reply (incl. reply-all) and forward — the gateway fills in recipients, `Re:`/`Fwd:` and threading.
 - HTML → Markdown for reading, Markdown → HTML for sending.
 
@@ -175,7 +176,7 @@ Point any MCP client at `http://<host>:8080/mcp` with the header
 
 | Tool | What it does |
 |---|---|
-| `get_mailbox_info` | Own address, allow lists and limits |
+| `get_mailbox_info` | Own address, current date and time, allow lists, limits and the review rules/policies |
 | `list_messages` | Received mail, newest first; filter by unread, or search by text, sender, subject, date |
 | `read_message` | One message as Markdown, incl. attachments list and received invitations |
 | `get_attachment` | Download an attachment |
