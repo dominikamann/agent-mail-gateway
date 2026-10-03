@@ -90,8 +90,9 @@ mailboxes:
       #     - rule: Never mention gifts or presents.
       #       recipients: [alex@yourmailserver.eu]
 
-    # Optional: called with a signed POST whenever an allowed message arrives.
-    webhook:
-      url: https://hermes.example.com/hooks/mail
-      # Used to sign requests (HMAC-SHA256). At least 16 characters.
-      secret: ${AGENT_WEBHOOK_SECRET}
+    # Optional: called with a signed POST whenever an allowed message arrives, e.g. a
+    # Hermes Agent webhook route (see docs/hermes.md). Remove the comment marks to enable.
+    # webhook:
+    #   url: http://hermes:8644/webhooks/agent-mail
+    #   # Used to sign requests (HMAC-SHA256). At least 16 characters.
+    #   secret: ${AGENT_WEBHOOK_SECRET}

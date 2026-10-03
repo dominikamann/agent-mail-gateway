@@ -13,11 +13,47 @@ export const sinceString = z
 
 const email = z.email();
 
-export const attachmentInput = z.object({
-  filename: z.string().min(1).max(255),
-  content_type: z.string().min(1).default('application/octet-stream'),
-  content_base64: z.base64(),
-});
+export const attachmentInput = z
+  .object({
+    filename: z
+      .string()
+      .min(1)
+      .max(255)
+      .optional()
+      .describe('File name; optional with from_message (the original name is used)'),
+    content_type: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('MIME type, e.g. text/csv or application/pdf'),
+    content_text: z
+      .string()
+      .optional()
+      .describe('File content as plain text (for txt, csv, md, json, ics, ...)'),
+    content_base64: z.base64().optional().describe('File content as base64 (for binary files)'),
+    from_message: z
+      .object({
+        id: z.string().describe('Message id the attachment belongs to'),
+        index: z.number().int().min(0).describe('Attachment index from read_message.attachments'),
+      })
+      .optional()
+      .describe('Attach a file from a received message without downloading it'),
+  })
+  .superRefine((a, issue) => {
+    const sources = [a.content_text, a.content_base64, a.from_message].filter(
+      (v) => v !== undefined,
+    );
+    if (sources.length !== 1) {
+      issue.addIssue({
+        code: 'custom',
+        message: 'give exactly one of content_text, content_base64 or from_message',
+      });
+    }
+    if (!a.from_message && !a.filename) {
+      issue.addIssue({ code: 'custom', message: 'filename is required', path: ['filename'] });
+    }
+  });
+export type AttachmentInput = z.output<typeof attachmentInput>;
 
 export const sendMessageShape = {
   to: z.array(email).min(1).describe('Recipients; every address must be on allow_send_to'),
@@ -41,7 +77,10 @@ export const eventShape = {
     .describe('IANA zone for times without offset; defaults to the mailbox timezone'),
   location: z.string().max(500).optional(),
   description_markdown: z.string().optional(),
-  attendees: z.array(email).min(1),
+  attendees: z
+    .array(email)
+    .min(1)
+    .describe('Email addresses to invite; each must be on allow_send_to'),
 };
 export const eventSchema = z.object(eventShape);
 export const eventPatchSchema = eventSchema.partial();
@@ -55,8 +94,8 @@ export const searchShape = {
   since: sinceString.optional(),
   before: sinceString.optional().describe('Only messages received before this date or date-time'),
   unread: z.boolean().optional(),
-  limit: z.number().int().min(1).max(50).default(20),
-  cursor: z.string().optional().describe('next_cursor from a previous call'),
+  limit: z.number().int().min(1).max(50).default(20).describe('Maximum number of messages (1-50)'),
+  cursor: z.string().optional().describe('next_cursor from a previous call, to get older messages'),
 };
 
 export const replyShape = {

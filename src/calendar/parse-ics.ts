@@ -129,7 +129,10 @@ const mailto = (v: string) =>
     .trim()
     .toLowerCase();
 
-function parseDate(p: Prop): { value: string; allDay: boolean; zoneUnknown?: boolean } | null {
+function parseDate(
+  p: Prop,
+  floatingZone: string,
+): { value: string; allDay: boolean; zoneUnknown?: boolean } | null {
   const v = p.value.trim();
   let m = /^(\d{4})(\d{2})(\d{2})$/.exec(v);
   if (m || p.params.VALUE === 'DATE') {
@@ -141,7 +144,8 @@ function parseDate(p: Prop): { value: string; allDay: boolean; zoneUnknown?: boo
   const local = `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`;
   try {
     if (m[7]) return { value: new Date(`${local}Z`).toISOString(), allDay: false };
-    if (!p.params.TZID) return { value: toUtc(local, 'UTC').toISOString(), allDay: false };
+    // "Floating" time without a zone: read it in the mailbox time zone.
+    if (!p.params.TZID) return { value: toUtc(local, floatingZone).toISOString(), allDay: false };
     const tz = resolveZone(p.params.TZID);
     return {
       value: toUtc(local, tz ?? 'UTC').toISOString(),
@@ -153,8 +157,27 @@ function parseDate(p: Prop): { value: string; allDay: boolean; zoneUnknown?: boo
   }
 }
 
-/** Reads the first event of an iCalendar text. Returns null if there is none. */
-export function parseIcs(text: string): ParsedIcs | null {
+/** ISO 8601 duration (P1DT2H30M, PT45M, P1W) in milliseconds, or null. */
+function durationMs(value: string): number | null {
+  const m = /^([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(
+    value.trim(),
+  );
+  if (!m) return null;
+  const [, sign, w, d, h, mi, s] = m;
+  const ms =
+    ((Number(w ?? 0) * 7 + Number(d ?? 0)) * 86_400 +
+      Number(h ?? 0) * 3600 +
+      Number(mi ?? 0) * 60 +
+      Number(s ?? 0)) *
+    1000;
+  return sign === '-' ? -ms : ms;
+}
+
+/**
+ * Reads the first event of an iCalendar text. Returns null if there is none.
+ * `floatingZone` is used for times that carry no time zone at all.
+ */
+export function parseIcs(text: string, floatingZone = 'UTC'): ParsedIcs | null {
   const lines = text
     .replace(/\r\n/g, '\n')
     .replace(/\n[ \t]/g, '')
@@ -162,7 +185,9 @@ export function parseIcs(text: string): ParsedIcs | null {
   let method: string | null = null;
   let inEvent = false;
   let done = false;
-  const ev: Partial<ParsedIcs> & { attendees: ParsedIcs['attendees'] } = { attendees: [] };
+  const ev: Partial<ParsedIcs> & { attendees: ParsedIcs['attendees']; duration?: number | null } = {
+    attendees: [],
+  };
 
   for (const line of lines) {
     const p = parseLine(line.trim());
@@ -203,14 +228,18 @@ export function parseIcs(text: string): ParsedIcs | null {
           });
           break;
         case 'DTSTART': {
-          const d = parseDate(p);
+          const d = parseDate(p, floatingZone);
           ev.start = d?.value ?? null;
           ev.allDay = d?.allDay ?? false;
           if (d?.zoneUnknown) ev.timezoneUnknown = true;
           break;
         }
+        case 'DURATION': {
+          ev.duration = durationMs(p.value);
+          break;
+        }
         case 'DTEND': {
-          const d = parseDate(p);
+          const d = parseDate(p, floatingZone);
           ev.end = d?.value ?? null;
           if (d?.zoneUnknown) ev.timezoneUnknown = true;
           break;
@@ -219,6 +248,9 @@ export function parseIcs(text: string): ParsedIcs | null {
     }
   }
   if (!done || !ev.uid) return null;
+  if (!ev.end && ev.start && ev.duration != null && !ev.allDay) {
+    ev.end = new Date(new Date(ev.start).getTime() + ev.duration).toISOString();
+  }
   return {
     method,
     uid: ev.uid,

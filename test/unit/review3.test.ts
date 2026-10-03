@@ -109,6 +109,9 @@ describe('I2: malformed policy answers fail closed', () => {
     mode: 'off' as const,
     on_error: 'allow' as const,
     timeout_seconds: 5,
+    chunk_chars: 6000,
+    chunk_overlap_chars: 200,
+    max_chunks: 20,
   };
   const ask = (answer: unknown, n = 2) =>
     policyReview(

@@ -1,3 +1,4 @@
+import { formatInZone } from '../calendar/time.js';
 import { GatewayError } from '../errors.js';
 import { decodeMessageId, encodeMessageId } from '../mail/ids.js';
 import type { FetchedMessage, MessageMeta } from '../mail/imap.js';
@@ -24,6 +25,8 @@ export interface InvitationView {
   title: string;
   start: string | null;
   end: string | null;
+  /** Start in the mailbox time zone, e.g. "Saturday, 10 October 2026 at 14:00 (Europe/Berlin)". */
+  start_local: string | null;
   all_day: boolean;
   /** True if the sender's time zone was not recognised; times were then read as UTC. */
   timezone_unknown: boolean;
@@ -44,14 +47,26 @@ export interface MessageDetail extends MessageSummary {
 
 export function mailboxInfo(ctx: MailboxContext) {
   const c = ctx.config;
+  const now = new Date(ctx.now());
   return {
     address: c.address,
+    now: now.toISOString(),
+    now_local: formatInZone(now, c.timezone),
     allow_receive_from: c.allow_receive_from,
     allow_send_to: c.allow_send_to,
     allow_delete: c.allow_delete,
     max_sends_per_hour: c.max_sends_per_hour,
     max_attachment_mb: c.max_attachment_mb,
     timezone: c.timezone,
+    // What outgoing mail must pass, so the agent can comply on the first try.
+    review: {
+      rules: c.review.rules,
+      llm_review: c.review.llm?.mode ?? 'off',
+      policies: (c.review.policies?.rules ?? []).map((r) => ({
+        rule: r.rule,
+        ...(r.recipients ? { recipients: r.recipients } : {}),
+      })),
+    },
   };
 }
 
@@ -88,7 +103,9 @@ export async function parseForSummary(
   if (!source && meta.size <= PREVIEW_MAX_BYTES) {
     source = (await ctx.imap.fetch([meta.uid]))[0]?.raw;
   }
-  return parseMessage(source ?? Buffer.concat([meta.header, Buffer.from('\r\n\r\n')]));
+  return parseMessage(source ?? Buffer.concat([meta.header, Buffer.from('\r\n\r\n')]), {
+    timezone: ctx.config.timezone,
+  });
 }
 
 const BATCH = 50;
@@ -182,7 +199,7 @@ export async function loadAllowed(
   if (!decideInbound(ctx.config, await parseHeaders(meta.header)).allowed) throw notFound();
   const [fetched] = await ctx.imap.fetch([decoded.uid]);
   if (!fetched) throw notFound();
-  const parsed = await parseMessage(fetched.raw);
+  const parsed = await parseMessage(fetched.raw, { timezone: ctx.config.timezone });
   return { uid: fetched.uid, seen: fetched.seen, parsed };
 }
 
@@ -204,6 +221,10 @@ export async function getMessage(
           title: parsed.invitation.title,
           start: parsed.invitation.start,
           end: parsed.invitation.end,
+          start_local:
+            parsed.invitation.start && !parsed.invitation.allDay
+              ? formatInZone(new Date(parsed.invitation.start), ctx.config.timezone)
+              : parsed.invitation.start,
           all_day: parsed.invitation.allDay,
           timezone_unknown: parsed.invitation.timezoneUnknown,
           location: parsed.invitation.location,

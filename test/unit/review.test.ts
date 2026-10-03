@@ -265,6 +265,9 @@ describe('config', () => {
         mode: 'warn',
         on_error: 'allow',
         timeout_seconds: 30,
+        chunk_chars: 6000,
+        chunk_overlap_chars: 200,
+        max_chunks: 20,
       },
     });
   });

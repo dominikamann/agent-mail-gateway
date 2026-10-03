@@ -87,7 +87,10 @@ export async function parseHeaders(rawOrHeader: Buffer): Promise<ParsedHeaders |
   }
 }
 
-export async function parseMessage(raw: Buffer): Promise<ParsedMessage> {
+export async function parseMessage(
+  raw: Buffer,
+  opts: { timezone?: string } = {},
+): Promise<ParsedMessage> {
   const parsed = await simpleParser(raw, {
     skipImageLinks: true,
     skipHtmlToText: true,
@@ -110,7 +113,9 @@ export async function parseMessage(raw: Buffer): Promise<ParsedMessage> {
   return {
     ...headersOf(parsed),
     replyTo: addresses(parsed.replyTo),
-    invitation: calendarPart ? parseIcs(calendarPart.content.toString('utf8')) : null,
+    invitation: calendarPart
+      ? parseIcs(calendarPart.content.toString('utf8'), opts.timezone ?? 'UTC')
+      : null,
     to: addresses(parsed.to),
     cc: addresses(parsed.cc),
     subject: parsed.subject ?? '',

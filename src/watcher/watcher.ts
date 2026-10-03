@@ -1,7 +1,8 @@
 import { encodeMessageId } from '../mail/ids.js';
 import type { MessageMeta } from '../mail/imap.js';
-import { parseHeaders } from '../mail/parse.js';
+import { type ParsedMessage, parseHeaders } from '../mail/parse.js';
 import { decideInbound } from '../policy/inbound.js';
+import { evaluateSenderAuth } from '../policy/sender-auth.js';
 import { type MailboxContext, recordAudit } from '../services/context.js';
 import { recordResponse } from '../services/events.js';
 import { parseForSummary } from '../services/messages.js';
@@ -102,6 +103,19 @@ export class InboundWatcher {
     const counterparts = headers?.from ? [headers.from] : [];
 
     if (!decision.allowed) {
+      // Answers to our own invitations from attendees who may not otherwise write to this
+      // mailbox (not on allow_receive_from) are still recorded; the mail itself stays hidden.
+      if (
+        decision.reason === 'sender_not_allowed' &&
+        meta.hasCalendar &&
+        headers?.from &&
+        this.isAttendee(headers.from) &&
+        (!config.require_sender_auth ||
+          evaluateSenderAuth(headers.authResults, headers.from, config.trusted_authserv_id) ===
+            'pass')
+      ) {
+        this.recordReply(await parseForSummary(this.ctx, meta), headers.from);
+      }
       if (decision.reason === 'sender_auth_missing') {
         this.ctx.log.warn(
           { mailbox: config.name },
@@ -120,18 +134,7 @@ export class InboundWatcher {
     if (!config.webhook && !meta.hasCalendar) return;
     const parsed = await parseForSummary(this.ctx, meta);
 
-    // An attendee answered one of our invitations: remember accepted/declined/tentative.
-    const inv = parsed.invitation;
-    if (inv?.method === 'REPLY') {
-      const answers = inv.attendees
-        .filter((a) => a.status)
-        .map((a) => ({ email: a.email, status: a.status! }));
-      recordResponse(
-        this.ctx,
-        { uid: inv.uid, sequence: inv.sequence, from: headers?.from ?? null },
-        answers,
-      );
-    }
+    this.recordReply(parsed, headers?.from ?? null);
 
     if (config.webhook) {
       const id = encodeMessageId(validity, uid);
@@ -149,5 +152,22 @@ export class InboundWatcher {
       });
       store.enqueueWebhook(config.name, id, payload, this.ctx.now());
     }
+  }
+
+  private isAttendee(address: string): boolean {
+    const a = address.toLowerCase();
+    return this.ctx.store
+      .listEvents(this.ctx.config.name)
+      .some((e) => e.status === 'active' && e.attendees.includes(a));
+  }
+
+  /** An attendee answered one of our invitations: remember accepted/declined/tentative. */
+  private recordReply(parsed: ParsedMessage, from: string | null): void {
+    const inv = parsed.invitation;
+    if (inv?.method !== 'REPLY') return;
+    const answers = inv.attendees
+      .filter((a) => a.status)
+      .map((a) => ({ email: a.email, status: a.status! }));
+    recordResponse(this.ctx, { uid: inv.uid, sequence: inv.sequence, from }, answers);
   }
 }

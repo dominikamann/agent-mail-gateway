@@ -1,3 +1,5 @@
+import { htmlToMarkdown } from '../convert/html-to-md.js';
+import { markdownToHtml } from '../convert/md-to-html.js';
 import { GatewayError } from '../errors.js';
 import { isAllowed } from '../policy/address.js';
 import { type MailboxContext, recordAudit } from '../services/context.js';
@@ -25,9 +27,35 @@ export interface OutgoingEvent {
   fields: Record<string, unknown>;
 }
 
-const MAX_FIELD_CHARS = 20_000;
-const cap = (text: string, max = MAX_FIELD_CHARS) =>
-  text.length > max ? `${text.slice(0, max)}\n[… truncated]` : text;
+/** What the recipient will actually see: Markdown rendered and read back (decodes entities etc.). */
+function rendered(markdown: string): string {
+  return htmlToMarkdown(markdownToHtml(markdown), markdown);
+}
+
+/** Splits text into overlapping parts so nothing is lost at a boundary. */
+function chunks(text: string, size: number, overlapChars: number): string[] {
+  if (text.length <= size) return [text];
+  const overlap = Math.min(overlapChars, Math.floor(size / 2));
+  const out: string[] = [];
+  for (let start = 0; start < text.length; start += size - overlap) {
+    out.push(text.slice(start, start + size));
+    if (start + size >= text.length) break;
+  }
+  return out;
+}
+
+/** For the quality review only (not a security check): one part is enough. */
+const shorten = (text: string, max: number) =>
+  text.length > max ? `${text.slice(0, max)}\n[… shortened for this check]` : text;
+
+/** Error text for the agent: no internal hosts, URLs or stack details (those go to the log). */
+function describeError(err: unknown): string {
+  const e = err as Error;
+  if (e?.name === 'TimeoutError' || e?.name === 'AbortError') return 'model timed out';
+  if (/^HTTP \d{3}$/.test(e?.message ?? '')) return `model answered ${e.message}`;
+  if (/^the reviewer /.test(e?.message ?? '')) return e.message;
+  return 'model unreachable';
+}
 
 /** `alex+news@x.de` → `alex@x.de`, so sub-addressing cannot dodge a recipient-scoped policy. */
 function withoutTag(address: string): string {
@@ -67,14 +95,14 @@ async function runLlm(
   try {
     verdict = await llmReview(llm, content, ctx.fetch);
   } catch (err) {
-    const message = `LLM review unavailable: ${(err as Error).message}`;
+    const message = `LLM review unavailable: ${describeError(err)}`;
     if (llm.on_error === 'block')
       reject(ctx, 'llm', [{ rule: 'llm_unavailable', message }], recipients);
     ctx.log.warn(
       { mailbox: ctx.config.name, err: (err as Error).message },
       'llm review unavailable',
     );
-    warnings.push(`review: llm unavailable (${(err as Error).message}), sent without LLM review`);
+    warnings.push(`review: llm unavailable (${describeError(err)}), sent without LLM review`);
     return;
   }
   if (verdict.approved) return;
@@ -86,7 +114,8 @@ async function runLlm(
 /** Operator-defined rule sets, optionally per recipient, checked by the LLM. */
 async function runPolicies(
   ctx: MailboxContext,
-  content: unknown,
+  fields: Record<string, unknown>,
+  text: string,
   recipients: string[],
   warnings: string[],
 ): Promise<void> {
@@ -95,16 +124,38 @@ async function runPolicies(
   const applicable = policies.rules.filter((r) => policyApplies(recipients, r.recipients));
   if (applicable.length === 0) return;
 
+  // Never cut: long content is checked in overlapping parts; a violation in any part counts.
+  const parts = chunks(text, llm.chunk_chars, llm.chunk_overlap_chars);
+  if (parts.length > llm.max_chunks) {
+    reject(
+      ctx,
+      'policy',
+      [
+        {
+          rule: 'policy_too_long',
+          message: `The message is too long to check against the policies (${parts.length} parts, limit ${llm.max_chunks}). Send a shorter message.`,
+        },
+      ],
+      recipients,
+    );
+  }
+
   let violations: { rule: number; reason: string }[];
   try {
-    violations = await policyReview(
-      llm,
-      applicable.map((r) => r.rule),
-      content,
-      ctx.fetch,
-    );
+    violations = [];
+    for (const [i, part] of parts.entries()) {
+      const data = { ...fields, part: `${i + 1} of ${parts.length}`, text: part };
+      violations.push(
+        ...(await policyReview(
+          llm,
+          applicable.map((r) => r.rule),
+          data,
+          ctx.fetch,
+        )),
+      );
+    }
   } catch (err) {
-    const message = `Policy check unavailable: ${(err as Error).message}`;
+    const message = `Policy check unavailable: ${describeError(err)}`;
     if (policies.on_error === 'block') {
       reject(ctx, 'policy', [{ rule: 'policy_unavailable', message }], recipients);
     }
@@ -112,12 +163,15 @@ async function runPolicies(
       { mailbox: ctx.config.name, err: (err as Error).message },
       'policy check unavailable',
     );
-    warnings.push(`review: policy check unavailable (${(err as Error).message}), sent without it`);
+    warnings.push(`review: policy check unavailable (${describeError(err)}), sent without it`);
     return;
   }
 
   const blocking: Finding[] = [];
+  const seen = new Set<number>();
   for (const v of violations) {
+    if (seen.has(v.rule)) continue;
+    seen.add(v.rule);
     const rule = applicable[v.rule - 1];
     if (!rule) continue;
     const message = `${rule.rule} — ${v.reason || 'The message violates this rule.'}`;
@@ -160,9 +214,10 @@ export async function reviewMessage(ctx: MailboxContext, m: OutgoingMessage): Pr
     }
     applyRules(ctx, findings, recipients, warnings);
   }
-  // Everything written by the agent or by other people goes into the nonce-marked JSON data.
+  // Everything written by the agent or by other people goes into the nonce-marked JSON data,
+  // as the recipient will see it (rendered), never cut for policies.
   const { own, forwarded } = splitForward(m.body_markdown);
-  const data = {
+  const header = {
     kind: 'email',
     from: ctx.config.address,
     to: m.to,
@@ -170,20 +225,30 @@ export async function reviewMessage(ctx: MailboxContext, m: OutgoingMessage): Pr
     bcc: m.bcc,
     subject: m.subject,
     attachments: m.attachments.map((a) => ({ filename: a.filename, bytes: a.size })),
-    message: cap(own.trim()),
-    ...(forwarded ? { forwarded_original: cap(forwarded) } : {}),
-    ...(m.replyTo
-      ? {
-          in_reply_to: {
-            from: m.replyTo.from,
-            subject: m.replyTo.subject,
-            text: cap(m.replyTo.body_markdown, 4000),
-          },
-        }
-      : {}),
   };
-  await runPolicies(ctx, data, recipients, warnings);
-  await runLlm(ctx, data, recipients, warnings);
+  const sentText = rendered(m.body_markdown);
+  await runPolicies(ctx, header, sentText, recipients, warnings);
+
+  const size = ctx.config.review.llm?.chunk_chars ?? 6000;
+  await runLlm(
+    ctx,
+    {
+      ...header,
+      message: shorten(rendered(own).trim(), size),
+      ...(forwarded ? { has_forwarded_original: true } : {}),
+      ...(m.replyTo
+        ? {
+            in_reply_to: {
+              from: m.replyTo.from,
+              subject: m.replyTo.subject,
+              text: shorten(m.replyTo.body_markdown, Math.min(4000, size)),
+            },
+          }
+        : {}),
+    },
+    recipients,
+    warnings,
+  );
   return warnings;
 }
 
@@ -198,9 +263,19 @@ export async function reviewEvent(ctx: MailboxContext, e: OutgoingEvent): Promis
       warnings,
     );
   }
-  const data = { kind: 'calendar invitation', organizer: ctx.config.address, ...e.fields };
-  await runPolicies(ctx, data, e.recipients, warnings);
-  await runLlm(ctx, data, e.recipients, warnings);
+  const { description = '', ...rest } = e.fields as { description?: string } & Record<
+    string,
+    unknown
+  >;
+  const header = { kind: 'calendar invitation', organizer: ctx.config.address, ...rest };
+  await runPolicies(ctx, header, rendered(String(description)), e.recipients, warnings);
+  const size = ctx.config.review.llm?.chunk_chars ?? 6000;
+  await runLlm(
+    ctx,
+    { ...header, description: shorten(rendered(String(description)), size) },
+    e.recipients,
+    warnings,
+  );
   return warnings;
 }
 

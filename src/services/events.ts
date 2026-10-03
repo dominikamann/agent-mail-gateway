@@ -14,6 +14,9 @@ export interface EventView {
   title: string;
   start: string;
   end: string;
+  /** Start and end in the event's time zone, readable. */
+  start_local: string;
+  end_local: string;
   timezone: string;
   location: string | null;
   description_markdown: string | null;
@@ -31,6 +34,8 @@ function view(r: EventRecord, warnings?: string[]): EventView {
     title: r.title,
     start: r.start,
     end: r.end,
+    start_local: formatInZone(new Date(r.start), r.timezone),
+    end_local: formatInZone(new Date(r.end), r.timezone),
     timezone: r.timezone,
     location: r.location,
     description_markdown: r.description,
@@ -181,7 +186,17 @@ export async function updateEvent(
   const rec: EventRecord = {
     ...old,
     title: patch.title ?? old.title,
-    ...times(patch.start ?? old.start, patch.end ?? old.end, tz),
+    // Moving only the start keeps the event's duration.
+    ...times(
+      patch.start ?? old.start,
+      patch.end ??
+        (patch.start
+          ? new Date(
+              toUtc(patch.start, tz).getTime() + (Date.parse(old.end) - Date.parse(old.start)),
+            ).toISOString()
+          : old.end),
+      tz,
+    ),
     timezone: tz,
     location: patch.location ?? old.location,
     description: patch.description_markdown ?? old.description,

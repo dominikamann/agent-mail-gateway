@@ -54,12 +54,20 @@ export const mailboxSchema = z
         duplicate_window_minutes: z.coerce.number().int().min(0).default(10),
         llm: z
           .object({
-            url: z.url(),
+            url: z.url().refine((u) => !/^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(u), {
+              message: 'must not contain credentials (user:password@); use api_key instead',
+            }),
             model: z.string().min(1),
             api_key: z.string().min(1).optional(),
             mode: z.enum(['block', 'warn', 'off']).default('warn'),
             on_error: z.enum(['allow', 'block']).default('allow'),
             timeout_seconds: z.coerce.number().int().min(1).max(300).default(30),
+            /** Text per model request; longer content is checked in several parts. */
+            chunk_chars: z.coerce.number().int().min(500).default(6000),
+            /** Overlap between parts so nothing is lost at a boundary. */
+            chunk_overlap_chars: z.coerce.number().int().min(0).default(200),
+            /** More parts than this: policies are not checked and the message is not sent. */
+            max_chunks: z.coerce.number().int().min(1).default(20),
             prompt: z.string().min(1).optional(),
             instructions: z.string().min(1).optional(),
           })

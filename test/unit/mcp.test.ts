@@ -82,7 +82,7 @@ describe('MCP', () => {
     const uid = t.imap.add(
       await buildRaw({
         from: 'boss@test.local',
-        attachments: [{ filename: 'a.txt', content: 'abc', contentType: 'text/plain' }],
+        attachments: [{ filename: 'a.pdf', content: 'abc', contentType: 'application/pdf' }],
       }),
     );
     app = await buildApp(new Gateway([t.ctx]));
