@@ -22,7 +22,7 @@ Every error has the same shape:
 | `attachment_too_large` | 413 | Attachments exceed `max_attachment_mb`. |
 | `rate_limited` | 429 | `max_sends_per_hour` reached; see `Retry-After` and `details.retry_after_seconds`. |
 | `send_failed` | 502 | The SMTP server rejected the message. Nothing was sent. |
-| `review_rejected` | 422 | The pre-send review stopped the message; `details.reviewer` is `rules` or `llm`, `details.reasons` lists `{ rule, message }`. Nothing was sent. |
+| `review_rejected` | 422 | The pre-send review stopped the message; `details.reviewer` is `rules`, `policy` or `llm`, `details.reasons` lists `{ rule, message }`. Nothing was sent. |
 | `mailbox_unavailable` | 503 | The IMAP server is not reachable right now. |
 
 ## Mailbox
@@ -45,7 +45,8 @@ Every error has the same shape:
 
 ### `GET /v1/messages`
 
-Query: `unread` (`true`/`false`), `since` (`2026-10-01` for the start of that day, or an ISO
+Query: `unread` (`true`/`false`), `text` (words in subject, sender or body), `from`,
+`subject`, `before` (like `since`), `since` (`2026-10-01` for the start of that day, or an ISO
 date-time; without an offset it is read in the mailbox `timezone`), `limit` (1–50, default 20),
 `cursor` (`next_cursor` from the previous page). Newest first; INBOX only. `since` compares
 with the time the message **arrived** in the mailbox, not the sender's `Date` header, so a
@@ -77,9 +78,39 @@ message.
 
 ### `GET /v1/messages/{id}?mark_read=true`
 
-Returns the summary fields plus `message_id`, `body_markdown` and
-`attachments: [{ index, filename, content_type, size }]`. Marks the message as read unless
-`mark_read=false`.
+Returns the summary fields plus `message_id`, `reply_to`, `body_markdown`,
+`attachments: [{ index, filename, content_type, size }]` and `invitation` — `null`, or the
+calendar invitation contained in the message:
+
+```json
+"invitation": {
+  "method": "REQUEST", "uid": "abc@partner.example", "title": "Planning",
+  "start": "2026-10-10T12:00:00.000Z", "end": "2026-10-10T13:00:00.000Z", "all_day": false,
+  "location": "Room 1", "description": null, "organizer": "x@partner.example",
+  "attendees": [{ "email": "youragent@yourmailserver.eu", "status": "needs-action" }]
+}
+```
+
+Marks the message as read unless `mark_read=false`.
+
+### `POST /v1/messages/{id}/reply`
+
+Body `{ "body_markdown": "…", "reply_all": false, "attachments": [] }`. Replies to the sender
+(or the `Reply-To` address); with `reply_all` also to everyone in To and Cc except the mailbox
+itself. Subject (`Re: …`) and threading headers are set automatically. Same response and errors
+as `POST /v1/messages`.
+
+### `POST /v1/messages/{id}/forward`
+
+Body `{ "to": ["…"], "cc": [], "bcc": [], "body_markdown": "optional note", "include_attachments": true }`.
+Sends `Fwd: <subject>` with your note, a header block of the original and its text; attachments
+are included unless `include_attachments` is false.
+
+### `POST /v1/messages/{id}/rsvp`
+
+Body `{ "response": "accept" | "decline" | "tentative", "comment": "optional" }`. Answers the
+invitation in that message with a standard iCalendar reply to the organizer (who must be on
+`allow_send_to`). `validation_error` if the message contains no invitation.
 
 ### `GET /v1/messages/{id}/attachments/{index}`
 
@@ -141,6 +172,12 @@ entry is updated in place); attendees removed from the list receive a cancellati
 ### `DELETE /v1/events/{id}`
 
 Sends a cancellation to all attendees.
+
+### `GET /v1/events/{id}`
+
+One event, including `responses`: answers received from attendees, e.g.
+`{ "you@yourmailserver.eu": "accepted" }` (`accepted`, `declined`, `tentative`, …). Answers are
+picked up automatically when the attendee's calendar replies.
 
 ### `GET /v1/events`
 
@@ -212,8 +249,12 @@ REST.
 | Tool | Arguments |
 |---|---|
 | `get_mailbox_info` | — |
-| `list_messages` | `unread?`, `since?`, `limit?`, `cursor?` |
-| `read_message` | `id`, `mark_read?` (default true) |
+| `list_messages` | `text?`, `from?`, `subject?`, `since?`, `before?`, `unread?`, `limit?`, `cursor?` |
+| `search_messages` | same as `list_messages`, at least one of `text`, `from`, `subject`, `since`, `before` |
+| `read_message` | `id`, `mark_read?` (default true) — includes `invitation` |
+| `reply_message` | `id`, `body_markdown`, `reply_all?`, `attachments?` |
+| `forward_message` | `id`, `to`, `cc?`, `bcc?`, `body_markdown?`, `include_attachments?` |
+| `respond_to_invitation` | `id`, `response` (`accept` \| `decline` \| `tentative`), `comment?` |
 | `get_attachment` | `id`, `index` — returns an embedded resource (base64) |
 | `mark_message` | `id`, `unread` |
 | `delete_message` | `id` |
@@ -221,4 +262,5 @@ REST.
 | `create_event` | `title`, `start`, `end`, `timezone?`, `location?`, `description_markdown?`, `attendees` |
 | `update_event` | `id` plus any event field |
 | `cancel_event` | `id` |
+| `get_event` | `id` — includes attendee `responses` |
 | `list_events` | — |

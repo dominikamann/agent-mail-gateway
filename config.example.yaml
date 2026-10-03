@@ -82,6 +82,13 @@ mailboxes:
       #   model: llama3.1:8b
       #   mode: warn          # warn (send, report) | block (do not send)
       #   on_error: allow     # allow (send without review) | block, if the model is unreachable
+      # Optional own rules, checked by the model above; per recipient if you like.
+      # policies:
+      #   mode: block
+      #   rules:
+      #     - rule: Never share financial information such as revenue, invoices or salaries.
+      #     - rule: Never mention gifts or presents.
+      #       recipients: [alex@yourmailserver.eu]
 
     # Optional: called with a signed POST whenever an allowed message arrives.
     webhook:

@@ -16,6 +16,13 @@ All notable changes to this project are documented here. The format follows
   OpenAI-compatible endpoint such as Ollama, in `warn` or `block` mode, with a built-in prompt
   that can be replaced (`prompt`) or extended (`instructions`). Rejections return
   `review_rejected` (422) with reasons and do not count towards the send limit.
+- Policies: own rules in plain language per mailbox, optionally only for specific recipients,
+  checked by the configured model (`review.policies`, fail-closed by default).
+- `search_messages` and search filters (`text`, `from`, `subject`, `before`) for listing.
+- `reply_message` (incl. reply-all, honours Reply-To) and `forward_message` (with attachments).
+- `get_event` with attendee responses; responses to own invitations are recorded automatically.
+- Received invitations are shown in `read_message`; `respond_to_invitation` accepts, declines
+  or tentatively accepts them with a standard calendar reply.
 
 ## [0.1.4]
 

@@ -1,67 +1,89 @@
 # Agent Mail Gateway
 
 [![CI](https://github.com/dominikamann/agent-mail-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/dominikamann/agent-mail-gateway/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/dominikamann/agent-mail-gateway)](https://github.com/dominikamann/agent-mail-gateway/releases)
+[![Docker image](https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker)](https://github.com/dominikamann/agent-mail-gateway/pkgs/container/agent-mail-gateway)
+[![MCP server on Glama](https://glama.ai/mcp/servers/dominikamann/agent-mail-gateway/badges/score.svg)](https://glama.ai/mcp/servers/dominikamann/agent-mail-gateway)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Give every AI agent its own email mailbox — without giving it the keys to that mailbox.
+**Give every AI agent its own email address — without giving it the keys to the mailbox.**
 
-Agent Mail Gateway is a small self-hosted Docker service that sits between your agents and
-ordinary IMAP/SMTP mailboxes (Plesk, IONOS, Outlook, your own server — any provider). Each agent
-gets **one API key bound to exactly one mailbox**. Through the gateway it can read mail, send
-mail with attachments, and send, update or cancel calendar invitations. You decide **who each
-agent may receive mail from and who it may write to**; everything else is filtered out.
+Agent Mail Gateway is a small self-hosted service (one Docker container) that sits between your
+AI agents and ordinary mailboxes on your existing mail server. Each agent gets **one API key for
+exactly one mailbox**. Through the gateway it can read and answer mail, send attachments and
+manage calendar invitations — but only with the people you allow, and every outgoing message is
+checked before it leaves.
 
-Mail bodies are delivered to the agent as **Markdown** (converted from HTML) and the agent
-writes Markdown that is sent as HTML — far fewer tokens than raw HTML email.
+Agents talk to it over **MCP** (Model Context Protocol) or a plain **REST API**. Mail arrives as
+**Markdown** instead of HTML, which saves a lot of tokens.
 
-**In short:** a self-hosted **email MCP server** and REST API for AI agents — IMAP/SMTP
-mailbox access with sender/recipient allow lists, HTML-to-Markdown, attachments and calendar
-invites, packaged as one Docker container.
+---
 
-### Typical use cases
+## Why
 
-- An assistant agent that sends you daily reports, summaries or alerts by email.
-- Agents that receive tasks or documents by email and answer them in the same thread.
-- Agents that schedule, move and cancel meetings with you via calendar invitations.
-- Giving several agents separate mailboxes on your existing mail server (Plesk, IONOS,
-  Outlook, Postfix/Dovecot, …) without exposing the mailbox passwords to them.
-- Locking an agent down so it can only talk to approved people — useful against prompt
-  injection by email and against agents mailing the wrong people.
+Giving an agent the IMAP/SMTP password of a mailbox means it can read everything, write to
+anyone, and a single prompt injection in an incoming email can make it leak data or spam people.
+The gateway keeps the password to itself and enforces your rules on every request:
 
-Works with any MCP client (for example Hermes Agent, Cursor, VS Code, n8n, LangChain/LangGraph
-MCP adapters) and with anything that can make HTTP requests.
+| Without the gateway | With the gateway |
+|---|---|
+| Agent knows the mailbox password | Agent only has an API key for its mailbox |
+| Reads every mail, incl. spam and phishing | Sees only mail from senders you allow |
+| Can write to anyone | Can only write to recipients you allow |
+| Sloppy or wrong mails go out | Every mail is checked before sending (rules, optional LLM, your policies) |
+| HTML mails cost thousands of tokens | Mail arrives as compact Markdown |
 
 ## Features
 
-- **N mailboxes, one key each** — a key can never reach another mailbox.
-- **Allow lists per mailbox** for receiving and sending (`name@domain` or `*@domain`).
-- **Filtered mail is invisible** — not listed, not readable, not even by guessing an id.
-  Non-allowed mail is moved to Trash (default) or left untouched.
-- **Spoofing protection** — senders must pass SPF/DKIM/DMARC as reported by your mail server.
-- **HTML ⇄ Markdown** conversion in both directions.
-- **Attachments** in and out.
-- **Calendar invites** (iCalendar) that update or cancel cleanly in Outlook, Gmail and Apple Calendar.
-- **REST API** with OpenAPI docs at `/docs`, and an **MCP server** at `/mcp` with the same tools.
-- **Webhooks** (HMAC-signed) when an allowed message arrives; new mail is detected instantly via IMAP IDLE.
-- **Send rate limit** per mailbox and an **audit log** of every send, rejection and deletion.
-- Works with **any IMAP/SMTP server**: TLS on 993/465 or STARTTLS on 143/587.
+**Mailbox access**
+- List, search, read, mark, delete; attachments in and out.
+- Reply (incl. reply-all) and forward — the gateway fills in recipients, `Re:`/`Fwd:` and threading.
+- HTML → Markdown for reading, Markdown → HTML for sending.
+
+**Calendar**
+- Send, update and cancel invitations; they update cleanly in Outlook, Gmail and Apple Calendar.
+- See who accepted or declined your invitations.
+- Read invitations you receive and accept, decline or tentatively accept them.
+
+**Control and safety**
+- Allow lists per mailbox for who the agent may receive mail from and write to
+  (`name@domain` or `*@domain`). Everything else is invisible to the agent and moved to Trash
+  (or kept).
+- Forged senders are rejected (SPF/DKIM/DMARC as checked by your mail server).
+- Send limit per hour, audit log of every send, rejection and deletion.
+- No fast retries on wrong passwords, so your server's fail2ban never blocks the gateway.
+
+**Review before sending** (details [below](#review-before-sending))
+- Built-in rules catch empty mails, attachment-only mails, "see attached" without attachment,
+  leftover placeholders and accidental duplicates — on by default.
+- Optional LLM review (e.g. a local model in Ollama) for "is this mail complete and sensible?".
+- Optional **policies**: your own rules in plain language, for everyone or for specific
+  recipients — e.g. *"never share financial information"*, *"never mention gifts to Alex"*.
+
+**Integration**
+- MCP over Streamable HTTP, a stdio bridge for stdio-only clients, and a REST API with
+  OpenAPI docs at `/docs`.
+- Signed webhooks when new mail arrives (compatible with Hermes Agent webhook routes).
+- [Hermes Agent](https://hermes-agent.nousresearch.com/) plugin with a skill that teaches the
+  agent how to use its mailbox.
+- Works with any IMAP/SMTP server: Plesk, IONOS, Outlook, Postfix/Dovecot, …
 
 ## How it works
 
 ```
- Agent ──REST/MCP + API key──▶ ┌──────────────────────────────────────┐
-                               │ Auth      key → exactly one mailbox  │
- Agent ◀──signed webhook────── │ Policy    sender/recipient checks    │
-                               │ Converter HTML ⇄ Markdown            │
-                               │ Calendar  build/update/cancel .ics   │
-                               │ Mailbox   IMAP read + IDLE watcher   │──IMAP──▶ mail server
-                               │ Sender    SMTP + copy to Sent        │──SMTP──▶
-                               │ Store     SQLite (small state)       │
-                               └──────────────────────────────────────┘
-                                 config.yaml + .env (read-only)
+ Agent ──MCP / REST + API key──▶ ┌────────────────────────────────────────┐
+                                 │ Auth       key → exactly one mailbox   │
+ Agent ◀──signed webhook──────── │ Policy     who may write / be written  │
+                                 │ Review     rules · LLM · your policies │
+                                 │ Converter  HTML ⇄ Markdown             │
+                                 │ Calendar   invitations and replies     │
+                                 │ Mailbox    IMAP + instant new-mail push│──IMAP──▶ your mail server
+                                 │ Sender     SMTP + copy to "Sent"       │──SMTP──▶
+                                 └────────────────────────────────────────┘
+                                   config.yaml + .env (read-only)
 ```
 
-The gateway stores no mail content; mail stays on your mail server.
+Mail stays on your mail server; the gateway only keeps a small SQLite file with its own state.
 
 ## Quick start
 
@@ -72,70 +94,133 @@ The gateway stores no mail content; mail stays on your mail server.
    curl -L -o config.yaml https://raw.githubusercontent.com/dominikamann/agent-mail-gateway/main/config.example.yaml
    curl -L -o .env https://raw.githubusercontent.com/dominikamann/agent-mail-gateway/main/.env.example
    ```
-2. Edit `config.yaml`: one entry per agent with its mailbox server, login and allow lists.
-3. Fill `.env` with the secrets referenced in `config.yaml`:
-   ```bash
-   openssl rand -hex 32   # an API key for each agent
-   openssl rand -hex 24   # a webhook secret (optional)
-   ```
-4. Start it:
+2. Edit `config.yaml`: one entry per agent with its mail server, login and allow lists.
+3. Put the secrets into `.env` (`openssl rand -hex 32` makes a good API key).
+4. Start it and check:
    ```bash
    docker compose up -d
    curl http://localhost:8080/health
    curl -H "Authorization: Bearer $AGENT_API_KEY" http://localhost:8080/v1/mailbox
    ```
 
+A minimal mailbox entry:
+
+```yaml
+mailboxes:
+  - name: assistant
+    address: youragent@yourmailserver.eu
+    api_key: ${AGENT_API_KEY}
+    imap: { host: mail.yourmailserver.eu, port: 993, security: tls }
+    smtp: { host: mail.yourmailserver.eu, port: 465, security: tls }
+    username: youragent@yourmailserver.eu
+    password: ${AGENT_MAIL_PASSWORD}
+    allow_receive_from: [you@yourmailserver.eu, "*@yourcompany.eu"]
+    allow_send_to: [you@yourmailserver.eu]
+```
+
 Every option is explained in [docs/configuration.md](docs/configuration.md).
+
+## Review before sending
+
+Agents are sometimes sloppy — an email with only an attachment, "please find attached" without
+a file, `Hello {name}`. The gateway checks every outgoing email and invitation **before** it is
+sent. If something is wrong, nothing is sent and the agent gets a clear error with the reasons
+(`review_rejected`), so it can fix the message and try again. Rejected attempts don't count
+towards the send limit.
+
+There are three layers; you choose per mailbox:
+
+| Layer | Default | What it does |
+|---|---|---|
+| **Rules** | on (`block`) | Fixed checks without AI: empty text, only an attachment, missing subject, attachment mentioned but missing, leftover placeholders, the same mail twice within 10 minutes, invitations in the past. |
+| **LLM review** | off | Asks a language model whether the message is complete and makes sense (e.g. does the reply actually answer the question?). |
+| **Policies** | off | Your own rules in plain language, checked by the language model — for all recipients or only for specific ones. |
+
+Each layer can block the message, only warn (send anyway and report it), or be switched off.
+
+```yaml
+    review:
+      rules: block                       # block | warn | off
+      llm:                               # any OpenAI-compatible endpoint, e.g. a local Ollama
+        url: http://ollama:11434/v1
+        model: llama3.1:8b
+        mode: warn                       # quality check: warn | block | off
+      policies:
+        mode: block                      # what a violation does: block | warn
+        rules:
+          - rule: Never share financial information such as revenue, prices, invoices, bank details or salaries.
+          - rule: Never mention gifts, presents or surprise plans.
+            recipients: [alex@yourmailserver.eu]
+          - rule: Never send calendar invitations.
+            recipients: [sam@yourmailserver.eu]
+```
+
+A rule with `recipients` applies only when one of those people receives the message (To, Cc,
+Bcc or invitation attendee). With [Ollama](https://ollama.com) the review runs entirely on your
+own machine; no mail content leaves your server. The built-in review prompt can be replaced or
+extended — see [docs/configuration.md](docs/configuration.md#review-before-sending).
 
 ## Using it
 
-**REST** — send a message:
+### MCP tools
+
+Point any MCP client at `http://<host>:8080/mcp` with the header
+`Authorization: Bearer <api key>`, or use the [stdio bridge](docs/stdio.md).
+
+| Tool | What it does |
+|---|---|
+| `get_mailbox_info` | Own address, allow lists and limits |
+| `list_messages` / `search_messages` | Received mail, newest first; search by text, sender, subject, date |
+| `read_message` | One message as Markdown, incl. attachments list and received invitations |
+| `get_attachment` | Download an attachment |
+| `mark_message` / `delete_message` | Mark read/unread; move to Trash (if allowed) |
+| `send_message` | Send a new email (Markdown, attachments) |
+| `reply_message` / `forward_message` | Reply (or reply-all) in the thread; forward with attachments |
+| `create_event` / `update_event` / `cancel_event` | Send, change and cancel invitations |
+| `list_events` / `get_event` | Own events with attendee responses |
+| `respond_to_invitation` | Accept, decline or tentatively accept a received invitation |
+
+### REST
 
 ```bash
+# send a message
 curl -X POST http://localhost:8080/v1/messages \
   -H "Authorization: Bearer $AGENT_API_KEY" -H "Content-Type: application/json" \
   -d '{"to":["you@yourmailserver.eu"],"subject":"Daily report","body_markdown":"All **green** today."}'
-```
 
-Read new mail:
-
-```bash
+# unread mail
 curl -H "Authorization: Bearer $AGENT_API_KEY" "http://localhost:8080/v1/messages?unread=true"
 ```
 
-**MCP** — point any MCP client at `http://<host>:8080/mcp` with the header
-`Authorization: Bearer <api key>`. Tools: `get_mailbox_info`, `list_messages`, `read_message`,
-`get_attachment`, `mark_message`, `delete_message`, `send_message`, `create_event`,
-`update_event`, `cancel_event`, `list_events`.
+All endpoints, error codes and the webhook format: [docs/api.md](docs/api.md).
 
-**stdio** — clients that can only start local processes use the bundled bridge
-`node dist/stdio.js` with `AGENT_MAIL_URL` and `AGENT_MAIL_API_KEY`; see
-[docs/stdio.md](docs/stdio.md).
+### Hermes Agent
 
-See [docs/api.md](docs/api.md) for every endpoint, the webhook format and examples.
-
-**Hermes Agent** — connect the MCP server in `~/.hermes/config.yaml` and install the plugin
-that teaches your agents to use their mailbox safely:
+Connect the MCP server in `~/.hermes/config.yaml` and install the plugin that teaches your
+agents to use their mailbox safely:
 
 ```bash
 hermes plugins install dominikamann/agent-mail-gateway/integrations/hermes/agent-mail-gateway --enable
 ```
 
-Step by step: [docs/hermes.md](docs/hermes.md).
+Step by step, including waking the agent on new mail: [docs/hermes.md](docs/hermes.md).
 
 ## Documentation
 
-- [Configuration](docs/configuration.md)
+- [Configuration](docs/configuration.md) — every option, allow lists, review, ports, sender authentication
 - [REST API, webhooks and MCP tools](docs/api.md)
 - [Hermes Agent integration and plugin](docs/hermes.md)
 - [stdio clients](docs/stdio.md)
 - [Security model](docs/security.md)
-- [Contributing](CONTRIBUTING.md)
+- [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
+
+[![Agent Mail Gateway on Glama](https://glama.ai/mcp/servers/dominikamann/agent-mail-gateway/badges/card.svg)](https://glama.ai/mcp/servers/dominikamann/agent-mail-gateway)
 
 ## Security
 
-Run the gateway behind a TLS reverse proxy when it is reachable from other machines. Report
-vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+Run the gateway on a private network or behind a reverse proxy with TLS — API keys travel in
+the `Authorization` header. Report vulnerabilities privately as described in
+[SECURITY.md](SECURITY.md).
 
 ## License
 
