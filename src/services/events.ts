@@ -20,6 +20,8 @@ export interface EventView {
   attendees: string[];
   status: 'active' | 'cancelled';
   sequence: number;
+  /** Answers received from attendees: accepted, declined, tentative, ... */
+  responses: Record<string, string>;
   warnings?: string[];
 }
 
@@ -35,6 +37,7 @@ function view(r: EventRecord, warnings?: string[]): EventView {
     attendees: r.attendees,
     status: r.status,
     sequence: r.sequence,
+    responses: r.responses ?? {},
     ...(warnings && warnings.length > 0 ? { warnings } : {}),
   };
 }
@@ -237,4 +240,24 @@ export async function cancelEvent(ctx: MailboxContext, id: string): Promise<Even
 
 export function listEvents(ctx: MailboxContext): EventView[] {
   return ctx.store.listEvents(ctx.config.name).map((r) => view(r));
+}
+
+export function getEvent(ctx: MailboxContext, id: string): EventView {
+  const r = ctx.store.getEvent(ctx.config.name, id);
+  if (!r) throw new GatewayError('not_found', 'Event not found');
+  return view(r);
+}
+
+/** Stores an attendee's answer (iCalendar REPLY) to one of this mailbox's own invitations. */
+export function recordResponse(
+  ctx: MailboxContext,
+  uid: string,
+  answers: { email: string; status: string }[],
+): boolean {
+  const rec = ctx.store.listEvents(ctx.config.name).find((e) => e.uid === uid);
+  if (!rec || answers.length === 0) return false;
+  const responses = { ...(rec.responses ?? {}) };
+  for (const a of answers) responses[a.email.toLowerCase()] = a.status.toLowerCase();
+  ctx.store.saveEvent({ ...rec, responses, updatedAt: ctx.now() });
+  return true;
 }

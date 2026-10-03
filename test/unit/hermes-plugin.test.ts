@@ -52,17 +52,22 @@ describe('Hermes plugin package', () => {
   it('documents every MCP tool the gateway exposes', () => {
     const skill = readFileSync(join(ROOT, 'skills', 'agent-mail', 'SKILL.md'), 'utf8');
     for (const tool of [
-      'get_mailbox_info',
-      'list_messages',
-      'read_message',
-      'get_attachment',
-      'mark_message',
-      'delete_message',
-      'send_message',
-      'create_event',
-      'update_event',
       'cancel_event',
+      'create_event',
+      'delete_message',
+      'forward_message',
+      'get_attachment',
+      'get_event',
+      'get_mailbox_info',
       'list_events',
+      'list_messages',
+      'mark_message',
+      'read_message',
+      'reply_message',
+      'respond_to_invitation',
+      'search_messages',
+      'send_message',
+      'update_event',
     ]) {
       expect(skill, tool).toContain(tool);
     }

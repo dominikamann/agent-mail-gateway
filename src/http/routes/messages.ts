@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { resolveSince } from '../../calendar/time.js';
+import { forwardMessage, replyMessage, respondToInvitation } from '../../services/compose.js';
 import {
   deleteMessage,
   getAttachment,
@@ -8,7 +9,13 @@ import {
   listMessages,
   markMessage,
 } from '../../services/messages.js';
-import { sendMessageSchema, sinceString } from '../../services/schemas.js';
+import {
+  forwardSchema,
+  replySchema,
+  rsvpSchema,
+  sendMessageSchema,
+  sinceString,
+} from '../../services/schemas.js';
 import { sendMessage } from '../../services/send.js';
 import { mailboxOf } from '../auth.js';
 
@@ -25,6 +32,10 @@ export const messageRoutes: FastifyPluginAsyncZod = async (app) => {
         querystring: z.object({
           unread: z.stringbool().optional(),
           since: sinceString.optional(),
+          before: sinceString.optional(),
+          text: z.string().min(1).optional(),
+          from: z.string().min(1).optional(),
+          subject: z.string().min(1).optional(),
           limit: z.coerce.number().int().min(1).max(50).default(20),
           cursor: z.string().optional(),
         }),
@@ -33,8 +44,17 @@ export const messageRoutes: FastifyPluginAsyncZod = async (app) => {
     async (req) => {
       const ctx = mailboxOf(req);
       const q = req.query;
-      const since = q.since ? resolveSince(q.since, ctx.config.timezone) : undefined;
-      return listMessages(ctx, { unread: q.unread, since, limit: q.limit, cursor: q.cursor });
+      const tz = ctx.config.timezone;
+      return listMessages(ctx, {
+        unread: q.unread,
+        since: q.since ? resolveSince(q.since, tz) : undefined,
+        before: q.before ? resolveSince(q.before, tz) : undefined,
+        text: q.text,
+        from: q.from,
+        subject: q.subject,
+        limit: q.limit,
+        cursor: q.cursor,
+      });
     },
   );
 
@@ -103,5 +123,45 @@ export const messageRoutes: FastifyPluginAsyncZod = async (app) => {
     '/messages',
     { schema: { tags, summary: 'Send a message written in Markdown', body: sendMessageSchema } },
     async (req) => sendMessage(mailboxOf(req), req.body),
+  );
+
+  app.post(
+    '/messages/:id/reply',
+    {
+      schema: {
+        tags,
+        summary: 'Reply to a message (in the same thread)',
+        params: idParams,
+        body: replySchema,
+      },
+    },
+    async (req) => replyMessage(mailboxOf(req), req.params.id, req.body),
+  );
+
+  app.post(
+    '/messages/:id/forward',
+    {
+      schema: {
+        tags,
+        summary: 'Forward a message with its attachments',
+        params: idParams,
+        body: forwardSchema,
+      },
+    },
+    async (req) => forwardMessage(mailboxOf(req), req.params.id, req.body),
+  );
+
+  app.post(
+    '/messages/:id/rsvp',
+    {
+      schema: {
+        tags,
+        summary: 'Accept, decline or tentatively accept an invitation',
+        params: idParams,
+        body: rsvpSchema,
+      },
+    },
+    async (req) =>
+      respondToInvitation(mailboxOf(req), req.params.id, req.body.response, req.body.comment),
   );
 };

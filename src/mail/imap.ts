@@ -18,11 +18,18 @@ export interface MessageMeta {
   size: number;
   internalDate: Date | null;
   hasAttachments: boolean;
+  /** Contains calendar data (an invitation or a reply to one). */
+  hasCalendar: boolean;
 }
 
 export interface SearchQuery {
   unread?: boolean;
   since?: Date;
+  before?: Date;
+  /** Full-text search in headers and body. */
+  text?: string;
+  from?: string;
+  subject?: string;
   uidAbove?: number;
 }
 
@@ -84,6 +91,14 @@ function isMissingFolder(err: unknown): boolean {
   return /\b(TRYCREATE|NONEXISTENT|no such mailbox|mailbox (does not|doesn't) exist)\b/i.test(
     `${e.responseText ?? ''} ${e.message ?? ''}`,
   );
+}
+
+function hasCalendar(node: StructureNode | undefined): boolean {
+  if (!node) return false;
+  const type = node.type?.toLowerCase() ?? '';
+  if (type === 'text/calendar' || type === 'application/ics') return true;
+  if (/\.ics$/i.test(node.dispositionParameters?.filename ?? '')) return true;
+  return (node.childNodes ?? []).some(hasCalendar);
 }
 
 function hasAttachment(node: StructureNode | undefined): boolean {
@@ -237,6 +252,11 @@ export class ImapFlowMailbox implements ImapMailbox {
       // SINCE compares whole days in the server's time zone; ask for one day more and let the
       // caller filter exactly on the arrival time.
       if (q.since) query.since = new Date(q.since.getTime() - 86_400_000);
+      // BEFORE is day-based too; ask for one day more and filter exactly on the arrival time.
+      if (q.before) query.before = new Date(q.before.getTime() + 86_400_000);
+      if (q.text) query.text = q.text;
+      if (q.from) query.from = q.from;
+      if (q.subject) query.subject = q.subject;
       if (q.uidAbove !== undefined) query.uid = `${q.uidAbove + 1}:*`;
       if (Object.keys(query).length === 0) query.all = true;
       const result = await c.search(query, { uid: true });
@@ -268,6 +288,7 @@ export class ImapFlowMailbox implements ImapMailbox {
           size: m.size ?? 0,
           internalDate: m.internalDate ? new Date(m.internalDate) : null,
           hasAttachments: hasAttachment(m.bodyStructure),
+          hasCalendar: hasCalendar(m.bodyStructure),
         });
       }
       return out.sort((a, b) => a.uid - b.uid);

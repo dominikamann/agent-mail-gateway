@@ -1,4 +1,5 @@
 import { type AddressObject, type EmailAddress, simpleParser } from 'mailparser';
+import { type ParsedIcs, parseIcs } from '../calendar/parse-ics.js';
 import { htmlToMarkdown } from '../convert/html-to-md.js';
 
 export interface ParsedAttachment {
@@ -16,6 +17,9 @@ export interface ParsedHeaders {
 }
 
 export interface ParsedMessage extends ParsedHeaders {
+  replyTo: string[];
+  /** Calendar data found in the message (an invitation, an update, a cancellation or a reply). */
+  invitation: ParsedIcs | null;
   to: string[];
   cc: string[];
   subject: string;
@@ -98,8 +102,15 @@ export async function parseMessage(raw: Buffer): Promise<ParsedMessage> {
       : [parsed.references]
     : [];
 
+  const calendarPart =
+    parsed.attachments.find((a) => a.contentType.toLowerCase().startsWith('text/calendar')) ??
+    parsed.attachments.find(
+      (a) => a.contentType.toLowerCase() === 'application/ics' || /\.ics$/i.test(a.filename ?? ''),
+    );
   return {
     ...headersOf(parsed),
+    replyTo: addresses(parsed.replyTo),
+    invitation: calendarPart ? parseIcs(calendarPart.content.toString('utf8')) : null,
     to: addresses(parsed.to),
     cc: addresses(parsed.cc),
     subject: parsed.subject ?? '',

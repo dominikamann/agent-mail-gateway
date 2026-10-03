@@ -41,6 +41,8 @@ export interface EventRecord {
   location: string | null;
   description: string | null;
   attendees: string[];
+  /** Answers from attendees, e.g. { "a@b.de": "accepted" }. */
+  responses?: Record<string, string>;
   createdAt: number;
   updatedAt: number;
 }

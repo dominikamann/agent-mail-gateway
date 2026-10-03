@@ -3,6 +3,7 @@ import type { MessageMeta } from '../mail/imap.js';
 import { parseHeaders } from '../mail/parse.js';
 import { decideInbound } from '../policy/inbound.js';
 import { type MailboxContext, recordAudit } from '../services/context.js';
+import { recordResponse } from '../services/events.js';
 import { parseForSummary } from '../services/messages.js';
 
 const BATCH = 20;
@@ -116,8 +117,19 @@ export class InboundWatcher {
       return;
     }
 
+    if (!config.webhook && !meta.hasCalendar) return;
+    const parsed = await parseForSummary(this.ctx, meta);
+
+    // An attendee answered one of our invitations: remember accepted/declined/tentative.
+    const inv = parsed.invitation;
+    if (inv?.method === 'REPLY') {
+      const answers = inv.attendees
+        .filter((a) => a.status)
+        .map((a) => ({ email: a.email, status: a.status! }));
+      recordResponse(this.ctx, inv.uid, answers);
+    }
+
     if (config.webhook) {
-      const parsed = await parseForSummary(this.ctx, meta);
       const id = encodeMessageId(validity, uid);
       const payload = JSON.stringify({
         event: 'message.received',

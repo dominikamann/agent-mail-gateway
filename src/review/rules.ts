@@ -29,10 +29,22 @@ function words(markdown: string): number {
     .filter((w) => /\p{L}|\p{N}/u.test(w)).length;
 }
 
+const FORWARD_SEPARATOR = '---------- Forwarded message ----------';
+
+/** The part written by the agent: without a forwarded original and without quoted lines. */
+function ownText(body: string): string {
+  const cut = body.indexOf(FORWARD_SEPARATOR);
+  return (cut >= 0 ? body.slice(0, cut) : body)
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('>'))
+    .join('\n');
+}
+
 /** Deterministic checks for obviously broken outgoing mail. Pure; no I/O. */
 export function checkMessageRules(d: MessageDraft): Finding[] {
   const findings: Finding[] = [];
   const body = d.body_markdown.trim();
+  const own = ownText(body);
   const hasAttachments = d.attachments.length > 0;
 
   if (hasAttachments && words(body) < 3) {
@@ -47,13 +59,13 @@ export function checkMessageRules(d: MessageDraft): Finding[] {
   if (d.subject.replace(/^\s*(?:(?:re|aw|fw|fwd|wg)\s*:\s*)*/i, '').trim().length === 0) {
     findings.push({ rule: 'missing_subject', message: 'The subject is empty.' });
   }
-  if (!hasAttachments && ATTACHMENT_MENTION.test(body)) {
+  if (!hasAttachments && ATTACHMENT_MENTION.test(own)) {
     findings.push({
       rule: 'attachment_missing',
       message: 'The text mentions an attachment, but nothing is attached.',
     });
   }
-  const placeholder = PLACEHOLDERS.map((re) => re.exec(body)?.[0]).find(Boolean);
+  const placeholder = PLACEHOLDERS.map((re) => re.exec(own)?.[0]).find(Boolean);
   if (placeholder) {
     findings.push({
       rule: 'placeholder',

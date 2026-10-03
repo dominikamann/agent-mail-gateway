@@ -13,7 +13,7 @@ export interface DeliverInput {
   attachments: { filename: string; contentType: string; content: Buffer }[];
   inReplyTo?: string;
   references?: string[];
-  icalEvent?: { method: 'REQUEST' | 'CANCEL'; content: string };
+  icalEvent?: { method: 'REQUEST' | 'CANCEL' | 'REPLY'; content: string };
 }
 
 const HOUR_MS = 3_600_000;

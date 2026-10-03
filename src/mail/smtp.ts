@@ -14,7 +14,7 @@ export interface OutgoingMail {
   inReplyTo?: string;
   references?: string[];
   attachments: { filename: string; contentType: string; content: Buffer }[];
-  icalEvent?: { method: 'REQUEST' | 'CANCEL'; content: string };
+  icalEvent?: { method: 'REQUEST' | 'CANCEL' | 'REPLY'; content: string };
 }
 
 export function composeMail(mail: OutgoingMail): Promise<{ raw: Buffer; messageId: string }> {

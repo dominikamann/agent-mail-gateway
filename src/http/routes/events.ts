@@ -1,6 +1,12 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { cancelEvent, createEvent, listEvents, updateEvent } from '../../services/events.js';
+import {
+  cancelEvent,
+  createEvent,
+  getEvent,
+  listEvents,
+  updateEvent,
+} from '../../services/events.js';
 import { eventPatchSchema, eventSchema } from '../../services/schemas.js';
 import { mailboxOf } from '../auth.js';
 
@@ -14,6 +20,12 @@ export const eventRoutes: FastifyPluginAsyncZod = async (app) => {
     async (req) => ({
       events: listEvents(mailboxOf(req)),
     }),
+  );
+
+  app.get(
+    '/events/:id',
+    { schema: { tags, summary: 'One event with attendee responses', params: idParams } },
+    async (req) => getEvent(mailboxOf(req), req.params.id),
   );
 
   app.post(

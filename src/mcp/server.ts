@@ -5,8 +5,9 @@ import { z } from 'zod';
 import { resolveSince } from '../calendar/time.js';
 import { GatewayError } from '../errors.js';
 import { authenticate } from '../http/auth.js';
+import { forwardMessage, replyMessage, respondToInvitation } from '../services/compose.js';
 import type { MailboxContext } from '../services/context.js';
-import { cancelEvent, createEvent, listEvents, updateEvent } from '../services/events.js';
+import { cancelEvent, createEvent, getEvent, listEvents, updateEvent } from '../services/events.js';
 import type { Gateway } from '../services/gateway.js';
 import {
   deleteMessage,
@@ -19,9 +20,14 @@ import {
 import {
   eventPatchSchema,
   eventShape,
+  forwardSchema,
+  forwardShape,
+  replySchema,
+  replyShape,
+  rsvpShape,
+  searchShape,
   sendMessageSchema,
   sendMessageShape,
-  sinceString,
 } from '../services/schemas.js';
 import { sendMessage } from '../services/send.js';
 import { VERSION } from '../version.js';
@@ -52,6 +58,32 @@ async function run(fn: () => Promise<ToolResult>): Promise<ToolResult> {
   }
 }
 
+function searchQuery(
+  ctx: MailboxContext,
+  a: {
+    text?: string;
+    from?: string;
+    subject?: string;
+    since?: string;
+    before?: string;
+    unread?: boolean;
+    limit: number;
+    cursor?: string;
+  },
+) {
+  const tz = ctx.config.timezone;
+  return {
+    text: a.text,
+    from: a.from,
+    subject: a.subject,
+    unread: a.unread,
+    since: a.since ? resolveSince(a.since, tz) : undefined,
+    before: a.before ? resolveSince(a.before, tz) : undefined,
+    limit: a.limit,
+    cursor: a.cursor,
+  };
+}
+
 export function createMcpServer(ctx: MailboxContext): McpServer {
   const server = new McpServer({ name: 'agent-mail-gateway', version: VERSION });
   const id = z.string().describe('Message id from list_messages');
@@ -70,24 +102,60 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
     {
       description:
         'List received messages (newest first). Only mail from allowed senders is visible.',
-      inputSchema: {
-        unread: z.boolean().optional(),
-        since: sinceString.optional(),
-        limit: z.number().int().min(1).max(50).default(20),
-        cursor: z.string().optional().describe('next_cursor from a previous call'),
-      },
+      inputSchema: searchShape,
+    },
+    async (a) => run(async () => json(await listMessages(ctx, searchQuery(ctx, a)))),
+  );
+
+  server.registerTool(
+    'search_messages',
+    {
+      description:
+        'Search received messages by text, sender, subject and/or date range (newest first). At least one criterion is required.',
+      inputSchema: searchShape,
     },
     async (a) =>
-      run(async () =>
-        json(
-          await listMessages(ctx, {
-            unread: a.unread,
-            since: a.since ? resolveSince(a.since, ctx.config.timezone) : undefined,
-            limit: a.limit,
-            cursor: a.cursor,
-          }),
-        ),
-      ),
+      run(async () => {
+        if (!a.text && !a.from && !a.subject && !a.since && !a.before) {
+          throw new GatewayError(
+            'validation_error',
+            'Give at least one of text, from, subject, since or before',
+          );
+        }
+        return json(await listMessages(ctx, searchQuery(ctx, a)));
+      }),
+  );
+
+  server.registerTool(
+    'reply_message',
+    {
+      description:
+        'Reply to a received message in the same thread. Recipients (sender, or everyone with reply_all) and the "Re:" subject are filled in for you.',
+      inputSchema: { id: z.string().describe('Message id to reply to'), ...replyShape },
+    },
+    async ({ id: messageId, ...rest }) =>
+      run(async () => json(await replyMessage(ctx, messageId, replySchema.parse(rest)))),
+  );
+
+  server.registerTool(
+    'forward_message',
+    {
+      description:
+        'Forward a received message (original text and, by default, its attachments) with an optional note.',
+      inputSchema: { id: z.string().describe('Message id to forward'), ...forwardShape },
+    },
+    async ({ id: messageId, ...rest }) =>
+      run(async () => json(await forwardMessage(ctx, messageId, forwardSchema.parse(rest)))),
+  );
+
+  server.registerTool(
+    'respond_to_invitation',
+    {
+      description:
+        'Accept, decline or tentatively accept a calendar invitation you received (read_message shows it under "invitation"). The organizer gets a standard calendar reply.',
+      inputSchema: { id: z.string().describe('Message id of the invitation'), ...rsvpShape },
+    },
+    async (a) => run(async () => json(await respondToInvitation(ctx, a.id, a.response, a.comment))),
   );
 
   server.registerTool(
@@ -184,6 +252,15 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
       inputSchema: { id: z.string() },
     },
     async (a) => run(async () => json(await cancelEvent(ctx, a.id))),
+  );
+
+  server.registerTool(
+    'get_event',
+    {
+      description: 'One event you created, with who accepted, declined or answered tentatively.',
+      inputSchema: { id: z.string() },
+    },
+    async (a) => run(async () => json(getEvent(ctx, a.id))),
   );
 
   server.registerTool(

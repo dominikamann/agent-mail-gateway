@@ -18,8 +18,24 @@ export interface MessageSummary {
   has_attachments: boolean;
 }
 
+export interface InvitationView {
+  method: string | null;
+  uid: string;
+  title: string;
+  start: string | null;
+  end: string | null;
+  all_day: boolean;
+  location: string | null;
+  description: string | null;
+  organizer: string | null;
+  attendees: { email: string; status: string | null }[];
+}
+
 export interface MessageDetail extends MessageSummary {
   message_id: string | null;
+  reply_to: string[];
+  /** Calendar invitation (or update, cancellation, reply) contained in the message. */
+  invitation: InvitationView | null;
   body_markdown: string;
   attachments: { index: number; filename: string; content_type: string; size: number }[];
 }
@@ -77,7 +93,16 @@ const BATCH = 50;
 
 export async function listMessages(
   ctx: MailboxContext,
-  q: { unread?: boolean; since?: Date; limit: number; cursor?: string },
+  q: {
+    unread?: boolean;
+    since?: Date;
+    before?: Date;
+    text?: string;
+    from?: string;
+    subject?: string;
+    limit: number;
+    cursor?: string;
+  },
 ): Promise<{ messages: MessageSummary[]; next_cursor: string | null }> {
   const validity = await ctx.imap.uidValidity();
   let before = Number.POSITIVE_INFINITY;
@@ -88,7 +113,16 @@ export async function listMessages(
     }
     before = decoded.uid;
   }
-  const candidates = (await ctx.imap.search({ unread: q.unread, since: q.since }))
+  const candidates = (
+    await ctx.imap.search({
+      unread: q.unread,
+      since: q.since,
+      before: q.before,
+      text: q.text,
+      from: q.from,
+      subject: q.subject,
+    })
+  )
     .filter((u) => u < before)
     .sort((a, b) => b - a);
 
@@ -103,6 +137,7 @@ export async function listMessages(
     for (const meta of (await ctx.imap.fetchMeta(batch)).sort((a, b) => b.uid - a.uid)) {
       // IMAP SINCE only compares whole days; filter exactly on the arrival time.
       if (q.since && meta.internalDate && meta.internalDate < q.since) continue;
+      if (q.before && meta.internalDate && meta.internalDate >= q.before) continue;
       if (!decideInbound(ctx.config, await parseHeaders(meta.header)).allowed) continue;
       allowed.push(meta);
       if (messages.length + allowed.length === q.limit) break;
@@ -159,6 +194,21 @@ export async function getMessage(
   return {
     ...summary(id, parsed, markRead || seen),
     message_id: parsed.messageId,
+    reply_to: parsed.replyTo,
+    invitation: parsed.invitation
+      ? {
+          method: parsed.invitation.method,
+          uid: parsed.invitation.uid,
+          title: parsed.invitation.title,
+          start: parsed.invitation.start,
+          end: parsed.invitation.end,
+          all_day: parsed.invitation.allDay,
+          location: parsed.invitation.location,
+          description: parsed.invitation.description,
+          organizer: parsed.invitation.organizer,
+          attendees: parsed.invitation.attendees,
+        }
+      : null,
     body_markdown: parsed.bodyMarkdown,
     attachments: parsed.attachments.map((a) => ({
       index: a.index,

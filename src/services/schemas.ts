@@ -47,3 +47,41 @@ export const eventSchema = z.object(eventShape);
 export const eventPatchSchema = eventSchema.partial();
 export type EventInput = z.output<typeof eventSchema>;
 export type EventPatch = z.output<typeof eventPatchSchema>;
+
+export const searchShape = {
+  text: z.string().min(1).optional().describe('Words to find in subject, sender or body'),
+  from: z.string().min(1).optional().describe('Sender address or part of it'),
+  subject: z.string().min(1).optional().describe('Words in the subject'),
+  since: sinceString.optional(),
+  before: sinceString.optional().describe('Only messages received before this date or date-time'),
+  unread: z.boolean().optional(),
+  limit: z.number().int().min(1).max(50).default(20),
+  cursor: z.string().optional().describe('next_cursor from a previous call'),
+};
+
+export const replyShape = {
+  body_markdown: z
+    .string()
+    .describe('Reply text in Markdown; the original is not quoted automatically'),
+  reply_all: z
+    .boolean()
+    .default(false)
+    .describe('Also reply to everyone in To and Cc of the original'),
+  attachments: z.array(attachmentInput).default([]),
+};
+export const replySchema = z.object(replyShape);
+
+export const forwardShape = {
+  to: z.array(email).min(1),
+  cc: z.array(email).default([]),
+  bcc: z.array(email).default([]),
+  body_markdown: z.string().optional().describe('Your note above the forwarded message'),
+  include_attachments: z.boolean().default(true),
+};
+export const forwardSchema = z.object(forwardShape);
+
+export const rsvpShape = {
+  response: z.enum(['accept', 'decline', 'tentative']),
+  comment: z.string().optional().describe('Optional message to the organizer'),
+};
+export const rsvpSchema = z.object(rsvpShape);

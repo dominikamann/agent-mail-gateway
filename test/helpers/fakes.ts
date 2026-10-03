@@ -59,6 +59,19 @@ export class FakeImap implements ImapMailbox {
     this.ensure();
     return this.messages
       .filter((m) => (!q.unread || !m.seen) && (q.uidAbove === undefined || m.uid > q.uidAbove))
+      .filter((m) => {
+        const text = m.raw.toString('utf8').toLowerCase();
+        const header = (name: string) =>
+          new RegExp(`^${name}:.*$`, 'im')
+            .exec(headerBlock(m.raw).toString('utf8'))?.[0]
+            .toLowerCase() ?? '';
+        return (
+          (!q.text || text.includes(q.text.toLowerCase())) &&
+          (!q.from || header('from').includes(q.from.toLowerCase())) &&
+          (!q.subject || header('subject').includes(q.subject.toLowerCase())) &&
+          (!q.before || !m.internalDate || m.internalDate < q.before)
+        );
+      })
       .map((m) => m.uid);
   }
   async fetchMeta(uids: number[]): Promise<MessageMeta[]> {
@@ -72,6 +85,9 @@ export class FakeImap implements ImapMailbox {
         size: m.raw.length,
         internalDate: m.internalDate ?? null,
         hasAttachments: /content-disposition:\s*attachment/i.test(m.raw.toString('latin1')),
+        hasCalendar: /content-type:\s*(text\/calendar|application\/ics)/i.test(
+          m.raw.toString('latin1'),
+        ),
       }));
   }
   async fetch(uids: number[]): Promise<FetchedMessage[]> {
