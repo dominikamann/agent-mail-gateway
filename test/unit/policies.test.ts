@@ -11,7 +11,7 @@ type Call = { messages: Msg[] };
 
 const RULES = [
   { rule: 'Never share financial information such as revenue, invoices or salaries.' },
-  { rule: 'Never mention gifts or presents.', recipients: ['steffi@partner.local'] },
+  { rule: 'Never mention gifts or presents.', recipients: ['alex@partner.local'] },
   { rule: 'Never send calendar invitations.', recipients: ['boss@test.local'], mode: 'warn' },
 ];
 
@@ -42,11 +42,11 @@ function policyContext(
 }
 
 const mail = (over: Partial<SendMessageInput> = {}): SendMessageInput => ({
-  to: ['steffi@partner.local'],
+  to: ['alex@partner.local'],
   cc: [],
   bcc: [],
   subject: 'Weekend plans',
-  body_markdown: 'Hi Steffi, shall we meet on Saturday for lunch?',
+  body_markdown: 'Hi Alex, shall we meet on Saturday for lunch?',
   attachments: [],
   ...over,
 });
@@ -61,7 +61,7 @@ describe('policies (LLM rule sets per mailbox)', () => {
     expect(p).toContain('1. Never share financial information');
     expect(p).toContain('2. Never mention gifts');
     expect(p).not.toContain('calendar invitations');
-    expect(p).toContain('Hi Steffi, shall we meet');
+    expect(p).toContain('Hi Alex, shall we meet');
   });
 
   it('a recipient-scoped rule does not apply to other recipients', async () => {
@@ -147,7 +147,7 @@ ${review}`;
         rules:
           - rule: No finance
           - rule: No gifts
-            recipients: [Steffi@Example.org]
+            recipients: [Alex@Example.org]
             mode: warn
 `),
       {},
@@ -157,7 +157,7 @@ ${review}`;
       on_error: 'block',
       rules: [
         { rule: 'No finance' },
-        { rule: 'No gifts', recipients: ['steffi@example.org'], mode: 'warn' },
+        { rule: 'No gifts', recipients: ['alex@example.org'], mode: 'warn' },
       ],
     });
   });
