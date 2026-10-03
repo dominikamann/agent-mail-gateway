@@ -43,7 +43,7 @@ function parseLine(line: string): Prop | null {
   return { name: name.toUpperCase(), params, value: line.slice(colon + 1) };
 }
 
-const unescape = (v: string) => v.replace(/\\n/gi, '\n').replace(/\\([,;\\])/g, '$1');
+const unescapeText = (v: string) => v.replace(/\\n/gi, '\n').replace(/\\([,;\\])/g, '$1');
 const mailto = (v: string) =>
   v
     .replace(/^mailto:/i, '')
@@ -98,13 +98,13 @@ export function parseIcs(text: string): ParsedIcs | null {
           ev.sequence = Number.parseInt(p.value, 10) || 0;
           break;
         case 'SUMMARY':
-          ev.title = unescape(p.value);
+          ev.title = unescapeText(p.value);
           break;
         case 'LOCATION':
-          ev.location = unescape(p.value);
+          ev.location = unescapeText(p.value);
           break;
         case 'DESCRIPTION':
-          ev.description = unescape(p.value);
+          ev.description = unescapeText(p.value);
           break;
         case 'STATUS':
           ev.status = p.value.trim().toLowerCase();
