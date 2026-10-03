@@ -57,7 +57,7 @@ export const mailboxSchema = z
             url: z.url(),
             model: z.string().min(1),
             api_key: z.string().min(1).optional(),
-            mode: z.enum(['block', 'warn']).default('warn'),
+            mode: z.enum(['block', 'warn', 'off']).default('warn'),
             on_error: z.enum(['allow', 'block']).default('allow'),
             timeout_seconds: z.coerce.number().int().min(1).max(300).default(30),
             prompt: z.string().min(1).optional(),
@@ -65,8 +65,30 @@ export const mailboxSchema = z
           })
           .strict()
           .optional(),
+        policies: z
+          .object({
+            mode: z.enum(['block', 'warn']).default('block'),
+            on_error: z.enum(['block', 'allow']).default('block'),
+            rules: z
+              .array(
+                z
+                  .object({
+                    rule: z.string().trim().min(1),
+                    recipients: z.array(addressPattern).min(1).optional(),
+                    mode: z.enum(['block', 'warn']).optional(),
+                  })
+                  .strict(),
+              )
+              .min(1),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
+      .refine((r) => !r.policies || r.llm, {
+        message: 'review.policies needs review.llm (the model that checks the rules)',
+        path: ['policies'],
+      })
       .prefault({}),
     webhook: z
       .object({ url: z.url(), secret: z.string().min(16) })

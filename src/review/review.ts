@@ -1,6 +1,7 @@
 import { GatewayError } from '../errors.js';
+import { isAllowed } from '../policy/address.js';
 import { type MailboxContext, recordAudit } from '../services/context.js';
-import { llmReview } from './llm.js';
+import { llmReview, policyReview } from './llm.js';
 import { checkMessageRules, type Finding, fingerprint, type MessageDraft } from './rules.js';
 
 export interface OutgoingMessage extends MessageDraft {
@@ -19,7 +20,7 @@ export interface OutgoingEvent {
 
 function reject(
   ctx: MailboxContext,
-  reviewer: 'rules' | 'llm',
+  reviewer: 'rules' | 'llm' | 'policy',
   reasons: Finding[],
   recipients: string[],
 ): never {
@@ -38,7 +39,7 @@ async function runLlm(
   warnings: string[],
 ): Promise<void> {
   const llm = ctx.config.review.llm;
-  if (!llm) return;
+  if (!llm || llm.mode === 'off') return;
   let verdict: { approved: boolean; reason: string };
   try {
     verdict = await llmReview(llm, content, ctx.fetch);
@@ -57,6 +58,52 @@ async function runLlm(
   const reason = verdict.reason || 'The reviewer rejected the message.';
   if (llm.mode === 'block') reject(ctx, 'llm', [{ rule: 'llm', message: reason }], recipients);
   warnings.push(`review: llm: ${reason}`);
+}
+
+/** Operator-defined rule sets, optionally per recipient, checked by the LLM. */
+async function runPolicies(
+  ctx: MailboxContext,
+  content: string,
+  recipients: string[],
+  warnings: string[],
+): Promise<void> {
+  const { policies, llm } = ctx.config.review;
+  if (!policies || !llm) return;
+  const applicable = policies.rules.filter(
+    (r) => !r.recipients || recipients.some((a) => isAllowed(a, r.recipients!)),
+  );
+  if (applicable.length === 0) return;
+
+  let violations: { rule: number; reason: string }[];
+  try {
+    violations = await policyReview(
+      llm,
+      applicable.map((r) => r.rule),
+      content,
+      ctx.fetch,
+    );
+  } catch (err) {
+    const message = `Policy check unavailable: ${(err as Error).message}`;
+    if (policies.on_error === 'block') {
+      reject(ctx, 'policy', [{ rule: 'policy_unavailable', message }], recipients);
+    }
+    ctx.log.warn(
+      { mailbox: ctx.config.name, err: (err as Error).message },
+      'policy check unavailable',
+    );
+    warnings.push(`review: policy check unavailable (${(err as Error).message}), sent without it`);
+    return;
+  }
+
+  const blocking: Finding[] = [];
+  for (const v of violations) {
+    const rule = applicable[v.rule - 1];
+    if (!rule) continue;
+    const message = `${rule.rule} — ${v.reason || 'The message violates this rule.'}`;
+    if ((rule.mode ?? policies.mode) === 'block') blocking.push({ rule: 'policy', message });
+    else warnings.push(`review: policy: ${message}`);
+  }
+  if (blocking.length > 0) reject(ctx, 'policy', blocking, recipients);
 }
 
 function applyRules(
@@ -112,6 +159,7 @@ export async function reviewMessage(ctx: MailboxContext, m: OutgoingMessage): Pr
       '--- ORIGINAL END ---',
     );
   }
+  await runPolicies(ctx, lines.join('\n'), m.recipients, warnings);
   await runLlm(ctx, lines.join('\n'), m.recipients, warnings);
   return warnings;
 }
@@ -135,6 +183,7 @@ export async function reviewEvent(ctx: MailboxContext, e: OutgoingEvent): Promis
     e.description,
     '--- DESCRIPTION END ---',
   ].join('\n');
+  await runPolicies(ctx, content, e.attendees, warnings);
   await runLlm(ctx, content, e.attendees, warnings);
   return warnings;
 }
