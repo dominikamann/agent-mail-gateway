@@ -44,11 +44,17 @@ const json = (value: unknown): ToolResult => ({
   content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
 });
 
-async function run(fn: () => Promise<ToolResult>): Promise<ToolResult> {
+async function run(ctx: MailboxContext, fn: () => Promise<ToolResult>): Promise<ToolResult> {
   try {
     return await fn();
   } catch (err) {
     const known = asGatewayError(err);
+    if (!known) {
+      ctx.log.error(
+        { mailbox: ctx.config.name, err: (err as Error)?.message ?? String(err) },
+        'unhandled tool error',
+      );
+    }
     if (known) {
       return {
         ...json({ error: known.code, message: known.message, details: known.details }),
@@ -138,7 +144,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
       inputSchema: {},
       annotations: READ,
     },
-    async () => run(async () => json(mailboxInfo(ctx))),
+    async () => run(ctx, async () => json(mailboxInfo(ctx))),
   );
 
   server.registerTool(
@@ -150,7 +156,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
       inputSchema: searchShape,
       annotations: READ,
     },
-    async (a) => run(async () => json(await listMessages(ctx, searchQuery(ctx, a)))),
+    async (a) => run(ctx, async () => json(await listMessages(ctx, searchQuery(ctx, a)))),
   );
 
   server.registerTool(
@@ -173,7 +179,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
         openWorldHint: false,
       },
     },
-    async (a) => run(async () => json(await getMessage(ctx, a.id, a.mark_read))),
+    async (a) => run(ctx, async () => json(await getMessage(ctx, a.id, a.mark_read))),
   );
 
   server.registerTool(
@@ -189,7 +195,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
       annotations: READ,
     },
     async (a) =>
-      run(async () => {
+      run(ctx, async () => {
         const att = await getAttachment(ctx, a.id, a.index);
         // Text files come back as readable text: models cannot read base64 reliably.
         const isText =
@@ -239,7 +245,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
       },
     },
     async (a) =>
-      run(async () => {
+      run(ctx, async () => {
         await markMessage(ctx, a.id, a.unread);
         return json({ ok: true });
       }),
@@ -260,7 +266,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
       },
     },
     async (a) =>
-      run(async () => {
+      run(ctx, async () => {
         await deleteMessage(ctx, a.id);
         return json({ ok: true });
       }),
@@ -275,7 +281,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
       inputSchema: sendMessageShape,
       annotations: SEND,
     },
-    async (a) => run(async () => json(await sendMessage(ctx, sendMessageSchema.parse(a)))),
+    async (a) => run(ctx, async () => json(await sendMessage(ctx, sendMessageSchema.parse(a)))),
   );
 
   server.registerTool(
@@ -291,7 +297,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
       annotations: SEND,
     },
     async ({ id: messageId, ...rest }) =>
-      run(async () => json(await replyMessage(ctx, messageId, replySchema.parse(rest)))),
+      run(ctx, async () => json(await replyMessage(ctx, messageId, replySchema.parse(rest)))),
   );
 
   server.registerTool(
@@ -307,7 +313,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
       annotations: SEND,
     },
     async ({ id: messageId, ...rest }) =>
-      run(async () => json(await forwardMessage(ctx, messageId, forwardSchema.parse(rest)))),
+      run(ctx, async () => json(await forwardMessage(ctx, messageId, forwardSchema.parse(rest)))),
   );
 
   server.registerTool(
@@ -322,7 +328,8 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
       },
       annotations: SEND,
     },
-    async (a) => run(async () => json(await respondToInvitation(ctx, a.id, a.response, a.comment))),
+    async (a) =>
+      run(ctx, async () => json(await respondToInvitation(ctx, a.id, a.response, a.comment))),
   );
 
   server.registerTool(
@@ -334,7 +341,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
       inputSchema: eventShape,
       annotations: SEND,
     },
-    async (a) => run(async () => json(await createEvent(ctx, a))),
+    async (a) => run(ctx, async () => json(await createEvent(ctx, a))),
   );
 
   server.registerTool(
@@ -347,7 +354,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
       annotations: SEND,
     },
     async ({ id: target, ...patch }) =>
-      run(async () => json(await updateEvent(ctx, target, patch))),
+      run(ctx, async () => json(await updateEvent(ctx, target, patch))),
   );
 
   server.registerTool(
@@ -364,7 +371,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
         openWorldHint: true,
       },
     },
-    async (a) => run(async () => json(await cancelEvent(ctx, a.id))),
+    async (a) => run(ctx, async () => json(await cancelEvent(ctx, a.id))),
   );
 
   server.registerTool(
@@ -376,7 +383,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
       inputSchema: { id: eventId },
       annotations: READ,
     },
-    async (a) => run(async () => json(getEvent(ctx, a.id))),
+    async (a) => run(ctx, async () => json(getEvent(ctx, a.id))),
   );
 
   server.registerTool(
@@ -388,7 +395,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
       inputSchema: {},
       annotations: READ,
     },
-    async () => run(async () => json({ events: listEvents(ctx) })),
+    async () => run(ctx, async () => json({ events: listEvents(ctx) })),
   );
 
   return server;

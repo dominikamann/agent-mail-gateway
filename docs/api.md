@@ -234,7 +234,7 @@ scheme that Hermes Agent webhook routes verify natively (see [hermes.md](hermes.
 
 The full body is not included (only `preview`, the first 200 characters, empty for messages
 over 1 MB) — fetch it with `GET /v1/messages/{id}` using the agent's key.
-Any 2xx response counts as delivered. Otherwise the gateway retries after 10 s, 1 min,
+Any 2xx response counts as delivered; redirects are not followed (a 3xx counts as failed). Otherwise the gateway retries after 10 s, 1 min,
 5 min, 15 min and 30 min, then gives up (the message is still available via the API).
 Delivery is **at least once**: pending deliveries survive restarts, and if the gateway is
 stopped in the middle of a delivery the same webhook can arrive twice. Use `message.id` to

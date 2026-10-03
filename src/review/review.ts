@@ -253,7 +253,11 @@ export async function reviewMessage(ctx: MailboxContext, m: OutgoingMessage): Pr
   };
   const { policies } = ctx.config.review;
   const binary = m.attachments.filter((a) => a.binary);
-  if (policies?.binary_attachments === 'block' && binary.length > 0) {
+  if (
+    policies?.binary_attachments === 'block' &&
+    binary.length > 0 &&
+    policies.rules.some((r) => policyApplies(recipients, r.recipients))
+  ) {
     reject(
       ctx,
       'policy',

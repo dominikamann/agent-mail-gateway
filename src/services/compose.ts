@@ -64,17 +64,15 @@ export async function forwardMessage(
     .filter(Boolean)
     .join('\n\n');
   const attachments = input.include_attachments
-    ? parsed.attachments
+    ? // Referenced, not re-uploaded: like re-attached files, they are not the agent's own text.
+      parsed.attachments
+        .map((a, index) => ({ a, index }))
         .filter(
-          (a) =>
+          ({ a }) =>
             !/^(text\/calendar|application\/ics)/i.test(a.contentType) &&
             !/\.ics$/i.test(a.filename),
         )
-        .map((a) => ({
-          filename: a.filename,
-          content_type: a.contentType,
-          content_base64: a.content.toString('base64'),
-        }))
+        .map(({ index }) => ({ from_message: { id, index } }))
     : [];
   return sendMessage(ctx, {
     to: input.to,

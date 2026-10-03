@@ -5,7 +5,10 @@ import { assertRecipientsAllowed, assertSendCapacity, deliver } from './deliver.
 import { loadAllowed } from './messages.js';
 import type { AttachmentInput, SendMessageInput } from './schemas.js';
 
-/** The content as text if it is UTF-8 or UTF-16 text (few control characters), else null. */
+/**
+ * The content as text if it is UTF-8, UTF-16 (with BOM) or Windows-1252 text with few control
+ * characters, else null. Compressed or binary data has far more control bytes and stays binary.
+ */
 function asText(content: Buffer): string | null {
   let text: string;
   try {
@@ -15,7 +18,8 @@ function asText(content: Buffer): string | null {
       text = new TextDecoder('utf-16be', { fatal: true }).decode(content);
     else text = new TextDecoder('utf-8', { fatal: true }).decode(content);
   } catch {
-    return null;
+    // Not UTF: e.g. a CSV exported by Excel. Windows-1252 decodes every byte.
+    text = new TextDecoder('windows-1252').decode(content);
   }
   let control = 0;
   for (let i = 0; i < text.length; i++) {
@@ -32,7 +36,7 @@ const tooLarge = (ctx: MailboxContext) =>
 /**
  * Turns text, base64 or "file from a received message" into attachment bytes. Stops as soon as
  * the size limit is exceeded and loads each referenced message only once. `text` is set for
- * text written by the agent, so policies can check it.
+ * every text file, so policies can check it; `binary` only for unreadable files the agent wrote.
  */
 async function resolveAttachments(ctx: MailboxContext, list: AttachmentInput[]) {
   const limit = ctx.config.max_attachment_mb * 1024 * 1024;
@@ -60,10 +64,13 @@ async function resolveAttachments(ctx: MailboxContext, list: AttachmentInput[]) 
           'Calendar files from received mail cannot be re-attached; use respond_to_invitation or create_event',
         );
       }
+      // Received files: text is policy-checked; binaries are never blocked (not the agent's).
+      const text = asText(original.content);
       out.push({
         filename: a.filename ?? original.filename,
         contentType: a.content_type ?? original.contentType,
         content: original.content,
+        ...(text !== null ? { text } : {}),
       });
     } else if (a.content_text !== undefined) {
       out.push({

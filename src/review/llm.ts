@@ -123,7 +123,7 @@ export async function llmReview(
 }
 
 const POLICY_PROMPT = `You check a message that an AI assistant is about to send against POLICY RULES set by the owner of this mailbox.
-A rule is violated only if what will be sent actually contains or clearly implies what the rule forbids: the subject, attachment names, and "text" — the message body or invitation description exactly as sent (source and rendered form, possibly split into parts) plus any text attachments the assistant wrote. "in_reply_to" is context only and is not sent.
+A rule is violated only if what will be sent actually contains or clearly implies what the rule forbids: the subject, attachment names, and "text" — the message body or invitation description exactly as sent (source and rendered form, possibly split into parts) plus the text attachments. "in_reply_to" is context only and is not sent.
 Judge nothing else: not style, not quality, not other topics.`;
 
 const policySuffix = (nonce: string) => `${dataNotice(nonce)}

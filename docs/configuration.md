@@ -44,7 +44,7 @@ must be set and non-empty.
 | `poll_interval_seconds` | number | `300` | Safety-net poll interval (min 10). |
 | `folders.sent` / `folders.trash` | string | auto | Override folder names. |
 | `review.rules` | `block` \| `warn` \| `off` | `block` | Rule-based check of outgoing mail (see below). |
-| `review.duplicate_window_minutes` | number | `10` | Window for the duplicate-message check; `0` disables it. |
+| `review.duplicate_window_minutes` | number | `10` | Window for the duplicate-message check (max. 10080 = 7 days); `0` disables it. |
 | `review.llm` | object | — | Language model used by the LLM review and by policies (see below). |
 | `review.policies` | object | — | Own rules checked by the language model, optionally per recipient (see below). |
 | `webhook.url` / `webhook.secret` | string | — | Optional webhook; secret at least 16 characters. |
@@ -250,13 +250,14 @@ like *"never share financial information"*.
 - Write rules as clear prohibitions about content ("Never share …", "Never mention …"); the
   model judges content only, not style.
 - What the model sees: subject, attachment names, the text as sent (see above), text
-  attachments the agent wrote (any attachment whose bytes are text, whatever its declared
-  type), a forwarded original, and for invitations the whole invitation mail (title, time,
+  attachments (any attachment whose bytes are text, whatever its declared type), a forwarded
+  original, and for invitations the whole invitation mail (title, time,
   place, description) — long content in several parts (see "Long messages" above).
 - Attachments the agent wrote that are not text (images, PDFs, ...) cannot be read by the
   model. They are allowed by default; set `policies.binary_attachments: block` to refuse them
-  whenever policies apply. Files re-attached from received mail (`from_message`) are not
-  checked; forwarded attachments are (they become part of the forwarded content).
+  whenever a policy applies to the recipients. Files from received mail (forwarded or
+  re-attached with `from_message`) are checked when they are text and never blocked otherwise.
+  Text files are read as UTF-8, UTF-16 (with BOM) or Windows-1252.
 - Policies are a strong safeguard against mistakes and most manipulation, but a language model
   is not a guarantee against a determined, hostile agent (e.g. heavy obfuscation). Use allow
   lists for hard limits on *who* can be reached.

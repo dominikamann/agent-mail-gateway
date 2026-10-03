@@ -26,6 +26,18 @@ All notable changes to this project are documented here. The format follows
   returns `mailbox_unavailable` (503).
 - Release workflow: least-privilege permissions per job, tag must match package.json and
   server.json, pinned mcp-publisher.
+- `binary_attachments: block` only applies when a policy covers the recipients; files from
+  received mail (forwarded or `from_message`) are policy-checked when they are text and never
+  blocked as binary.
+- Text attachments in Windows-1252 (e.g. CSV from Excel) are recognised as text.
+- Unexpected MCP tool errors are logged for the operator.
+- RSVP comments are limited to 20,000 characters; `duplicate_window_minutes` to 7 days.
+
+### Changed
+
+- Base64 attachments whose bytes are text are policy-checked whatever their declared type, so
+  very large ones can now be rejected with `policy_too_long`.
+- Webhook deliveries answered with a redirect (3xx) count as failed.
 
 ## [0.3.1]
 

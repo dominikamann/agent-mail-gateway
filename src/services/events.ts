@@ -288,13 +288,13 @@ export function getEvent(ctx: MailboxContext, id: string): EventView {
   return view(r);
 }
 
+const PARTSTATS = new Set(['accepted', 'declined', 'tentative', 'delegated', 'needs-action']);
+
 /**
  * Stores an attendee's answer (iCalendar REPLY) to one of this mailbox's own invitations.
  * Only the sender's own answer counts, only if they are a current attendee, and only for the
  * current version of the event (answers to an older time are ignored).
  */
-const PARTSTATS = new Set(['accepted', 'declined', 'tentative', 'delegated', 'needs-action']);
-
 export function recordResponse(
   ctx: MailboxContext,
   reply: { uid: string; sequence: number; from: string | null },

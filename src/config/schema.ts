@@ -51,7 +51,7 @@ export const mailboxSchema = z
     review: z
       .object({
         rules: z.enum(['block', 'warn', 'off']).default('block'),
-        duplicate_window_minutes: z.coerce.number().int().min(0).default(10),
+        duplicate_window_minutes: z.coerce.number().int().min(0).max(10_080).default(10),
         llm: z
           .object({
             url: z.url().refine(
