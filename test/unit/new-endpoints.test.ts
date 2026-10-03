@@ -115,23 +115,14 @@ describe('MCP: new tools', () => {
       }),
     );
     const names = (await client.listTools()).tools.map((x) => x.name);
-    for (const n of [
-      'search_messages',
-      'reply_message',
-      'forward_message',
-      'respond_to_invitation',
-      'get_event',
-    ]) {
+    for (const n of ['reply_message', 'forward_message', 'respond_to_invitation', 'get_event']) {
       expect(names).toContain(n);
     }
     const text = (r: unknown) =>
       JSON.parse((r as { content: { text: string }[] }).content[0]!.text);
     expect(
-      text(await client.callTool({ name: 'search_messages', arguments: { text: 'pizza' } }))
-        .messages,
+      text(await client.callTool({ name: 'list_messages', arguments: { text: 'pizza' } })).messages,
     ).toHaveLength(1);
-    const noCriteria = await client.callTool({ name: 'search_messages', arguments: {} });
-    expect(noCriteria.isError).toBe(true);
     expect(
       text(await client.callTool({ name: 'read_message', arguments: { id: `1-${inv}` } }))
         .invitation.title,

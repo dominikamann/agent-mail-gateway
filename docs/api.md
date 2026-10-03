@@ -271,7 +271,6 @@ REST.
 |---|---|
 | `get_mailbox_info` | — |
 | `list_messages` | `text?`, `from?`, `subject?`, `since?`, `before?`, `unread?`, `limit?`, `cursor?` |
-| `search_messages` | same as `list_messages`, at least one of `text`, `from`, `subject`, `since`, `before` |
 | `read_message` | `id`, `mark_read?` (default true) — includes `invitation` |
 | `reply_message` | `id`, `body_markdown`, `reply_all?`, `attachments?` |
 | `forward_message` | `id`, `to`, `cc?`, `bcc?`, `body_markdown?`, `include_attachments?` |

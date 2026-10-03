@@ -65,7 +65,6 @@ describe('Hermes plugin package', () => {
       'read_message',
       'reply_message',
       'respond_to_invitation',
-      'search_messages',
       'send_message',
       'update_event',
     ]) {

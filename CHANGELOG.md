@@ -17,6 +17,14 @@ All notable changes to this project are documented here. The format follows
 - Custom `review.llm.prompt`s now receive the message as JSON in nonce-marked data blocks
   (since 0.2.1) instead of `--- MESSAGE START ---` text.
 
+### Changed (MCP)
+
+- `search_messages` was merged into `list_messages` (same filters): one tool for listing and
+  searching, 15 tools in total.
+- Every tool has a title, MCP annotations (read-only / destructive / idempotent / open-world),
+  a description that says when to use it instead of its siblings, its side effects and what it
+  returns, and a description for every parameter.
+
 ### Added
 
 - MCP server instructions with the essentials for any MCP client; every id/index argument

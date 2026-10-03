@@ -176,7 +176,7 @@ Point any MCP client at `http://<host>:8080/mcp` with the header
 | Tool | What it does |
 |---|---|
 | `get_mailbox_info` | Own address, allow lists and limits |
-| `list_messages` / `search_messages` | Received mail, newest first; search by text, sender, subject, date |
+| `list_messages` | Received mail, newest first; filter by unread, or search by text, sender, subject, date |
 | `read_message` | One message as Markdown, incl. attachments list and received invitations |
 | `get_attachment` | Download an attachment |
 | `mark_message` / `delete_message` | Mark read/unread; move to Trash (if allowed) |
