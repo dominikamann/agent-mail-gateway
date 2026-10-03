@@ -29,13 +29,20 @@ function words(markdown: string): number {
     .filter((w) => /\p{L}|\p{N}/u.test(w)).length;
 }
 
-const FORWARD_SEPARATOR = '---------- Forwarded message ----------';
+/** Separates the agent's own text from a forwarded original (see forward_message). */
+export const FORWARD_SEPARATOR = '---------- Forwarded message ----------';
+
+export function splitForward(body: string): { own: string; forwarded: string | null } {
+  const cut = body.indexOf(FORWARD_SEPARATOR);
+  return cut >= 0
+    ? { own: body.slice(0, cut), forwarded: body.slice(cut) }
+    : { own: body, forwarded: null };
+}
 
 /** The part written by the agent: without a forwarded original and without quoted lines. */
 function ownText(body: string): string {
-  const cut = body.indexOf(FORWARD_SEPARATOR);
-  return (cut >= 0 ? body.slice(0, cut) : body)
-    .split('\n')
+  return splitForward(body)
+    .own.split('\n')
     .filter((line) => !line.trimStart().startsWith('>'))
     .join('\n');
 }

@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1]
+
+### Fixed
+
+- Comments in invitation answers (`respond_to_invitation`) go through the review and policies.
+- Cancellations to removed attendees are reviewed against those attendees' policies.
+- Malformed policy answers from the model (e.g. unknown rule numbers) count as a failed check
+  (fail closed) instead of "no violation".
+- Everything written by the agent or by others is passed to the model as JSON inside markers
+  with a random nonce, so mail text cannot pose as instructions to the reviewer.
+- Recipient-scoped policies also match sub-addresses (`alex+x@…`).
+- Attendee answers are only accepted from the attendee themself and for the current version;
+  they are cleared when the time changes.
+- Received invitations with Outlook/Exchange (Windows) time zone names are read correctly;
+  unknown zones are flagged as `timezone_unknown`.
+- iCalendar text unescaping and quoted parameters with semicolons.
+
 ## [0.2.0]
 
 ### Added

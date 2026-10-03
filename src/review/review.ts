@@ -2,20 +2,43 @@ import { GatewayError } from '../errors.js';
 import { isAllowed } from '../policy/address.js';
 import { type MailboxContext, recordAudit } from '../services/context.js';
 import { llmReview, policyReview } from './llm.js';
-import { checkMessageRules, type Finding, fingerprint, type MessageDraft } from './rules.js';
+import {
+  checkMessageRules,
+  type Finding,
+  fingerprint,
+  type MessageDraft,
+  splitForward,
+} from './rules.js';
 
 export interface OutgoingMessage extends MessageDraft {
-  recipients: string[];
-  /** Human-readable header lines for the LLM (to, cc, subject, ...). */
-  headerLines: string[];
+  to: string[];
+  cc: string[];
+  bcc: string[];
   replyTo?: { from: string | null; subject: string; body_markdown: string };
 }
 
 export interface OutgoingEvent {
-  attendees: string[];
+  /** Everyone who receives something: attendees, plus removed attendees getting a cancellation. */
+  recipients: string[];
   start: Date;
-  headerLines: string[];
-  description: string;
+  /** Fields shown to the model: title, when, where, attendees, description, ... */
+  fields: Record<string, unknown>;
+}
+
+const MAX_FIELD_CHARS = 20_000;
+const cap = (text: string, max = MAX_FIELD_CHARS) =>
+  text.length > max ? `${text.slice(0, max)}\n[… truncated]` : text;
+
+/** `alex+news@x.de` → `alex@x.de`, so sub-addressing cannot dodge a recipient-scoped policy. */
+function withoutTag(address: string): string {
+  const [local = '', domain = ''] = address.toLowerCase().split('@');
+  return `${local.split('+')[0]}@${domain}`;
+}
+
+function policyApplies(recipients: string[], patterns: string[] | undefined): boolean {
+  if (!patterns) return true;
+  const normalized = patterns.map((p) => (p.startsWith('*@') ? p : withoutTag(p)));
+  return recipients.some((a) => isAllowed(withoutTag(a), normalized));
 }
 
 function reject(
@@ -34,7 +57,7 @@ function reject(
 
 async function runLlm(
   ctx: MailboxContext,
-  content: string,
+  content: unknown,
   recipients: string[],
   warnings: string[],
 ): Promise<void> {
@@ -63,15 +86,13 @@ async function runLlm(
 /** Operator-defined rule sets, optionally per recipient, checked by the LLM. */
 async function runPolicies(
   ctx: MailboxContext,
-  content: string,
+  content: unknown,
   recipients: string[],
   warnings: string[],
 ): Promise<void> {
   const { policies, llm } = ctx.config.review;
   if (!policies || !llm) return;
-  const applicable = policies.rules.filter(
-    (r) => !r.recipients || recipients.some((a) => isAllowed(a, r.recipients!)),
-  );
+  const applicable = policies.rules.filter((r) => policyApplies(recipients, r.recipients));
   if (applicable.length === 0) return;
 
   let violations: { rule: number; reason: string }[];
@@ -123,44 +144,46 @@ function applyRules(
  */
 export async function reviewMessage(ctx: MailboxContext, m: OutgoingMessage): Promise<string[]> {
   const warnings: string[] = [];
+  const recipients = [...m.to, ...m.cc, ...m.bcc];
   const { review } = ctx.config;
   if (review.rules !== 'off') {
     const findings = checkMessageRules(m);
     const window = review.duplicate_window_minutes * 60_000;
     if (
       window > 0 &&
-      ctx.store.hasFingerprintSince(
-        ctx.config.name,
-        fingerprint(m.recipients, m),
-        ctx.now() - window,
-      )
+      ctx.store.hasFingerprintSince(ctx.config.name, fingerprint(recipients, m), ctx.now() - window)
     ) {
       findings.push({
         rule: 'duplicate',
         message: `The same message went to the same recipients in the last ${review.duplicate_window_minutes} minutes.`,
       });
     }
-    applyRules(ctx, findings, m.recipients, warnings);
+    applyRules(ctx, findings, recipients, warnings);
   }
-  const lines = [
-    'Kind: email',
-    `From: ${ctx.config.address}`,
-    ...m.headerLines,
-    `Attachments: ${m.attachments.length ? m.attachments.map((a) => `${a.filename} (${a.size} bytes)`).join(', ') : 'none'}`,
-    '--- MESSAGE START ---',
-    m.body_markdown,
-    '--- MESSAGE END ---',
-  ];
-  if (m.replyTo) {
-    lines.push(
-      `In reply to a message from ${m.replyTo.from ?? 'unknown'} with subject "${m.replyTo.subject}":`,
-      '--- ORIGINAL START ---',
-      m.replyTo.body_markdown.slice(0, 4000),
-      '--- ORIGINAL END ---',
-    );
-  }
-  await runPolicies(ctx, lines.join('\n'), m.recipients, warnings);
-  await runLlm(ctx, lines.join('\n'), m.recipients, warnings);
+  // Everything written by the agent or by other people goes into the nonce-marked JSON data.
+  const { own, forwarded } = splitForward(m.body_markdown);
+  const data = {
+    kind: 'email',
+    from: ctx.config.address,
+    to: m.to,
+    cc: m.cc,
+    bcc: m.bcc,
+    subject: m.subject,
+    attachments: m.attachments.map((a) => ({ filename: a.filename, bytes: a.size })),
+    message: cap(own.trim()),
+    ...(forwarded ? { forwarded_original: cap(forwarded) } : {}),
+    ...(m.replyTo
+      ? {
+          in_reply_to: {
+            from: m.replyTo.from,
+            subject: m.replyTo.subject,
+            text: cap(m.replyTo.body_markdown, 4000),
+          },
+        }
+      : {}),
+  };
+  await runPolicies(ctx, data, recipients, warnings);
+  await runLlm(ctx, data, recipients, warnings);
   return warnings;
 }
 
@@ -171,21 +194,15 @@ export async function reviewEvent(ctx: MailboxContext, e: OutgoingEvent): Promis
     applyRules(
       ctx,
       [{ rule: 'event_in_past', message: 'The event starts in the past.' }],
-      e.attendees,
+      e.recipients,
       warnings,
     );
   }
-  const content = [
-    'Kind: calendar invitation',
-    `Organizer: ${ctx.config.address}`,
-    ...e.headerLines,
-    '--- DESCRIPTION START ---',
-    e.description,
-    '--- DESCRIPTION END ---',
-  ].join('\n');
-  await runPolicies(ctx, content, e.attendees, warnings);
-  await runLlm(ctx, content, e.attendees, warnings);
+  const data = { kind: 'calendar invitation', organizer: ctx.config.address, ...e.fields };
+  await runPolicies(ctx, data, e.recipients, warnings);
+  await runLlm(ctx, data, e.recipients, warnings);
   return warnings;
 }
 
+export { FORWARD_SEPARATOR } from './rules.js';
 export { fingerprint };

@@ -87,7 +87,8 @@ calendar invitation contained in the message:
   "method": "REQUEST", "uid": "abc@partner.example", "title": "Planning",
   "start": "2026-10-10T12:00:00.000Z", "end": "2026-10-10T13:00:00.000Z", "all_day": false,
   "location": "Room 1", "description": null, "organizer": "x@partner.example",
-  "attendees": [{ "email": "youragent@yourmailserver.eu", "status": "needs-action" }]
+  "attendees": [{ "email": "youragent@yourmailserver.eu", "status": "needs-action" }],
+  "timezone_unknown": false
 }
 ```
 
@@ -177,7 +178,13 @@ Sends a cancellation to all attendees.
 
 One event, including `responses`: answers received from attendees, e.g.
 `{ "you@yourmailserver.eu": "accepted" }` (`accepted`, `declined`, `tentative`, …). Answers are
-picked up automatically when the attendee's calendar replies.
+picked up automatically when the attendee's calendar replies. Only an attendee's own answer
+counts (from their address, for the current version of the event); when the time changes, all
+answers are cleared, and removed attendees' answers are dropped.
+
+Time zones in received invitations: IANA names (`Europe/Berlin`) and the Windows names used by
+Outlook/Exchange (`W. Europe Standard Time`) are understood. If a zone is unknown, times are
+read as UTC and `timezone_unknown` is `true`.
 
 ### `GET /v1/events`
 

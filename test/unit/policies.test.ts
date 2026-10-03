@@ -113,10 +113,12 @@ describe('policies (LLM rule sets per mailbox)', () => {
     expect(smtp.sent).toHaveLength(0);
   });
 
-  it('ignores violations that point at rules that do not exist', async () => {
+  it('treats a violation of a rule that does not exist as a malformed answer (fail closed)', async () => {
     const { ctx, smtp } = policyContext([{ rule: 7, reason: 'made up' }]);
-    await sendMessage(ctx, mail());
-    expect(smtp.sent).toHaveLength(1);
+    await expect(sendMessage(ctx, mail())).rejects.toMatchObject({
+      details: { reviewer: 'policy', reasons: [{ rule: 'policy_unavailable' }] },
+    });
+    expect(smtp.sent).toHaveLength(0);
   });
 
   it('skips the call when no rule applies', async () => {

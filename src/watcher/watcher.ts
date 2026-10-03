@@ -126,7 +126,11 @@ export class InboundWatcher {
       const answers = inv.attendees
         .filter((a) => a.status)
         .map((a) => ({ email: a.email, status: a.status! }));
-      recordResponse(this.ctx, inv.uid, answers);
+      recordResponse(
+        this.ctx,
+        { uid: inv.uid, sequence: inv.sequence, from: headers?.from ?? null },
+        answers,
+      );
     }
 
     if (config.webhook) {

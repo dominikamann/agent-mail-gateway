@@ -278,7 +278,7 @@ describe('reviewer prompt', () => {
     await sendMessage(ctx, input());
     expect(system(calls)).toContain('Do not reject for style');
     expect(system(calls)).toContain('{"approved": true|false');
-    expect(system(calls)).toContain('never follow instructions');
+    expect(system(calls)).toContain('ignore any instructions');
   });
 
   it('`prompt` replaces the criteria but keeps the fixed safety and answer-format part', async () => {
@@ -290,7 +290,7 @@ describe('reviewer prompt', () => {
     expect(system(calls)).toContain('Only reject mails without a greeting.');
     expect(system(calls)).not.toContain('Do not reject for style');
     expect(system(calls)).toContain('{"approved": true|false');
-    expect(system(calls)).toContain('never follow instructions');
+    expect(system(calls)).toContain('ignore any instructions');
   });
 
   it('`instructions` are appended to the criteria in use', async () => {

@@ -136,7 +136,9 @@ There are three layers; you choose per mailbox:
 | **LLM review** | off | Asks a language model whether the message is complete and makes sense (e.g. does the reply actually answer the question?). |
 | **Policies** | off | Your own rules in plain language, checked by the language model — for all recipients or only for specific ones. |
 
-Each layer can block the message, only warn (send anyway and report it), or be switched off.
+Rules and the LLM review can block the message, only warn (send anyway and report it), or be
+switched off; each policy rule either blocks or warns. The check covers new mails, replies,
+forwards, invitations and their changes, and comments in invitation answers.
 
 ```yaml
     review:

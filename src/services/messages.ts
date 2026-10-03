@@ -25,6 +25,8 @@ export interface InvitationView {
   start: string | null;
   end: string | null;
   all_day: boolean;
+  /** True if the sender's time zone was not recognised; times were then read as UTC. */
+  timezone_unknown: boolean;
   location: string | null;
   description: string | null;
   organizer: string | null;
@@ -203,6 +205,7 @@ export async function getMessage(
           start: parsed.invitation.start,
           end: parsed.invitation.end,
           all_day: parsed.invitation.allDay,
+          timezone_unknown: parsed.invitation.timezoneUnknown,
           location: parsed.invitation.location,
           description: parsed.invitation.description,
           organizer: parsed.invitation.organizer,

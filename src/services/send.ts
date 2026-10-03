@@ -47,13 +47,9 @@ export async function sendMessage(
   // Stage 1 rules and optional stage 2 LLM; throws review_rejected before any send slot is used.
   const reviewWarnings = await reviewMessage(ctx, {
     ...draft,
-    recipients,
-    headerLines: [
-      `To: ${input.to.join(', ')}`,
-      ...(input.cc.length ? [`Cc: ${input.cc.join(', ')}`] : []),
-      ...(input.bcc.length ? [`Bcc: ${input.bcc.join(', ')}`] : []),
-      `Subject: ${subject}`,
-    ],
+    to: input.to,
+    cc: input.cc,
+    bcc: input.bcc,
     replyTo,
   });
 

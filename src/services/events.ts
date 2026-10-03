@@ -107,17 +107,26 @@ function reachable(ctx: MailboxContext, attendees: string[]): { to: string[]; wa
   return { to, warnings };
 }
 
-function reviewOf(ctx: MailboxContext, r: EventRecord): Promise<string[]> {
+/**
+ * Reviews an invitation. `cancelledFor` are removed attendees who get a cancellation with the
+ * same title and description — they are recipients too, so their policies apply.
+ */
+function reviewOf(
+  ctx: MailboxContext,
+  r: EventRecord,
+  cancelledFor: string[] = [],
+): Promise<string[]> {
   return reviewEvent(ctx, {
-    attendees: r.attendees,
+    recipients: [...r.attendees, ...cancelledFor],
     start: new Date(r.start),
-    headerLines: [
-      `Title: ${r.title}`,
-      `When: ${formatInZone(new Date(r.start), r.timezone)} – ${formatInZone(new Date(r.end), r.timezone)}`,
-      ...(r.location ? [`Where: ${r.location}`] : []),
-      `Attendees: ${r.attendees.join(', ')}`,
-    ],
-    description: r.description ?? '',
+    fields: {
+      title: r.title,
+      when: `${formatInZone(new Date(r.start), r.timezone)} – ${formatInZone(new Date(r.end), r.timezone)}`,
+      where: r.location,
+      attendees: r.attendees,
+      ...(cancelledFor.length ? { cancellation_sent_to: cancelledFor } : {}),
+      description: r.description ?? '',
+    },
   });
 }
 
@@ -180,12 +189,19 @@ export async function updateEvent(
     sequence: old.sequence + 1,
     updatedAt: ctx.now(),
   };
+  // A new time invalidates all answers; otherwise only removed attendees' answers go.
+  const timeChanged = rec.start !== old.start || rec.end !== old.end;
+  rec.responses = timeChanged
+    ? {}
+    : Object.fromEntries(
+        Object.entries(old.responses ?? {}).filter(([email]) => attendees.includes(email)),
+      );
   const removed = reachable(
     ctx,
     old.attendees.filter((a) => !attendees.includes(a)),
   );
   // Reserve the update and the cancellation together so a parallel send cannot take a slot.
-  const reviewWarnings = await reviewOf(ctx, rec);
+  const reviewWarnings = await reviewOf(ctx, rec, removed.to);
   const [requestSlot, cancelSlot] = reserveSends(ctx, removed.to.length > 0 ? 2 : 1);
 
   let warnings: string[];
@@ -249,15 +265,23 @@ export function getEvent(ctx: MailboxContext, id: string): EventView {
 }
 
 /** Stores an attendee's answer (iCalendar REPLY) to one of this mailbox's own invitations. */
+/**
+ * Stores an attendee's answer (iCalendar REPLY) to one of this mailbox's own invitations.
+ * Only the sender's own answer counts, only if they are a current attendee, and only for the
+ * current version of the event (answers to an older time are ignored).
+ */
 export function recordResponse(
   ctx: MailboxContext,
-  uid: string,
+  reply: { uid: string; sequence: number; from: string | null },
   answers: { email: string; status: string }[],
 ): boolean {
-  const rec = ctx.store.listEvents(ctx.config.name).find((e) => e.uid === uid);
-  if (!rec || answers.length === 0) return false;
-  const responses = { ...(rec.responses ?? {}) };
-  for (const a of answers) responses[a.email.toLowerCase()] = a.status.toLowerCase();
+  const from = reply.from?.toLowerCase();
+  const rec = ctx.store.listEvents(ctx.config.name).find((e) => e.uid === reply.uid);
+  if (!rec || !from || rec.status === 'cancelled') return false;
+  if (!rec.attendees.includes(from) || reply.sequence < rec.sequence) return false;
+  const own = answers.find((a) => a.email.toLowerCase() === from);
+  if (!own) return false;
+  const responses = { ...(rec.responses ?? {}), [from]: own.status.toLowerCase() };
   ctx.store.saveEvent({ ...rec, responses, updatedAt: ctx.now() });
   return true;
 }

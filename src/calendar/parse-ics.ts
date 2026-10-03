@@ -10,6 +10,8 @@ export interface ParsedIcs {
   start: string | null;
   end: string | null;
   allDay: boolean;
+  /** True if a time zone could not be identified; times were then read as UTC. */
+  timezoneUnknown: boolean;
   location: string | null;
   description: string | null;
   organizer: string | null;
@@ -34,7 +36,19 @@ function parseLine(line: string): Prop | null {
     }
   }
   if (colon < 0) return null;
-  const [name = '', ...rawParams] = line.slice(0, colon).split(';');
+  // Split parameters on ';' outside of quoted values (e.g. CN="Doe; John").
+  const parts: string[] = [];
+  let current = '';
+  let quoted = false;
+  for (const ch of line.slice(0, colon)) {
+    if (ch === '"') quoted = !quoted;
+    if (ch === ';' && !quoted) {
+      parts.push(current);
+      current = '';
+    } else current += ch;
+  }
+  parts.push(current);
+  const [name = '', ...rawParams] = parts;
   const params: Record<string, string> = {};
   for (const p of rawParams) {
     const eq = p.indexOf('=');
@@ -43,14 +57,79 @@ function parseLine(line: string): Prop | null {
   return { name: name.toUpperCase(), params, value: line.slice(colon + 1) };
 }
 
-const unescapeText = (v: string) => v.replace(/\\n/gi, '\n').replace(/\\([,;\\])/g, '$1');
+/** Windows (Outlook/Exchange) time zone names → IANA, from the CLDR windowsZones mapping. */
+const WINDOWS_ZONES: Record<string, string> = {
+  'w. europe standard time': 'Europe/Berlin',
+  'central europe standard time': 'Europe/Budapest',
+  'central european standard time': 'Europe/Warsaw',
+  'romance standard time': 'Europe/Paris',
+  'gmt standard time': 'Europe/London',
+  'greenwich standard time': 'Atlantic/Reykjavik',
+  'e. europe standard time': 'Europe/Chisinau',
+  'fle standard time': 'Europe/Kiev',
+  'gtb standard time': 'Europe/Bucharest',
+  'russian standard time': 'Europe/Moscow',
+  'turkey standard time': 'Europe/Istanbul',
+  'israel standard time': 'Asia/Jerusalem',
+  'egypt standard time': 'Africa/Cairo',
+  'south africa standard time': 'Africa/Johannesburg',
+  'w. central africa standard time': 'Africa/Lagos',
+  'arab standard time': 'Asia/Riyadh',
+  'arabian standard time': 'Asia/Dubai',
+  'iran standard time': 'Asia/Tehran',
+  'pakistan standard time': 'Asia/Karachi',
+  'india standard time': 'Asia/Kolkata',
+  'se asia standard time': 'Asia/Bangkok',
+  'china standard time': 'Asia/Shanghai',
+  'singapore standard time': 'Asia/Singapore',
+  'taipei standard time': 'Asia/Taipei',
+  'tokyo standard time': 'Asia/Tokyo',
+  'korea standard time': 'Asia/Seoul',
+  'aus eastern standard time': 'Australia/Sydney',
+  'e. australia standard time': 'Australia/Brisbane',
+  'cen. australia standard time': 'Australia/Adelaide',
+  'w. australia standard time': 'Australia/Perth',
+  'new zealand standard time': 'Pacific/Auckland',
+  'eastern standard time': 'America/New_York',
+  'central standard time': 'America/Chicago',
+  'mountain standard time': 'America/Denver',
+  'us mountain standard time': 'America/Phoenix',
+  'pacific standard time': 'America/Los_Angeles',
+  'alaskan standard time': 'America/Anchorage',
+  'hawaiian standard time': 'Pacific/Honolulu',
+  'atlantic standard time': 'America/Halifax',
+  'canada central standard time': 'America/Regina',
+  'sa pacific standard time': 'America/Bogota',
+  'e. south america standard time': 'America/Sao_Paulo',
+  'argentina standard time': 'America/Buenos_Aires',
+  utc: 'UTC',
+  'coordinated universal time': 'UTC',
+};
+
+/** IANA zone for a TZID: IANA as is, Windows names mapped, "/vendor/…/Europe/Berlin" prefixes stripped. */
+function resolveZone(tzid: string): string | null {
+  const id = tzid.trim();
+  if (isValidTimeZone(id)) return id;
+  const windows = WINDOWS_ZONES[id.toLowerCase()];
+  if (windows) return windows;
+  const segments = id.split('/').filter(Boolean);
+  for (let k = Math.min(3, segments.length); k >= 1; k--) {
+    const candidate = segments.slice(-k).join('/');
+    if (candidate.includes('/') && isValidTimeZone(candidate)) return candidate;
+  }
+  return null;
+}
+
+// One pass, so an escaped backslash followed by "n" stays a backslash and an "n".
+const unescapeText = (v: string) =>
+  v.replace(/\\([nN,;\\])/g, (_, c: string) => (c === 'n' || c === 'N' ? '\n' : c));
 const mailto = (v: string) =>
   v
     .replace(/^mailto:/i, '')
     .trim()
     .toLowerCase();
 
-function parseDate(p: Prop): { value: string; allDay: boolean } | null {
+function parseDate(p: Prop): { value: string; allDay: boolean; zoneUnknown?: boolean } | null {
   const v = p.value.trim();
   let m = /^(\d{4})(\d{2})(\d{2})$/.exec(v);
   if (m || p.params.VALUE === 'DATE') {
@@ -62,8 +141,13 @@ function parseDate(p: Prop): { value: string; allDay: boolean } | null {
   const local = `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`;
   try {
     if (m[7]) return { value: new Date(`${local}Z`).toISOString(), allDay: false };
-    const tz = p.params.TZID && isValidTimeZone(p.params.TZID) ? p.params.TZID : 'UTC';
-    return { value: toUtc(local, tz).toISOString(), allDay: false };
+    if (!p.params.TZID) return { value: toUtc(local, 'UTC').toISOString(), allDay: false };
+    const tz = resolveZone(p.params.TZID);
+    return {
+      value: toUtc(local, tz ?? 'UTC').toISOString(),
+      allDay: false,
+      zoneUnknown: tz === null,
+    };
   } catch {
     return null;
   }
@@ -122,10 +206,13 @@ export function parseIcs(text: string): ParsedIcs | null {
           const d = parseDate(p);
           ev.start = d?.value ?? null;
           ev.allDay = d?.allDay ?? false;
+          if (d?.zoneUnknown) ev.timezoneUnknown = true;
           break;
         }
         case 'DTEND': {
-          ev.end = parseDate(p)?.value ?? null;
+          const d = parseDate(p);
+          ev.end = d?.value ?? null;
+          if (d?.zoneUnknown) ev.timezoneUnknown = true;
           break;
         }
       }
@@ -140,6 +227,7 @@ export function parseIcs(text: string): ParsedIcs | null {
     start: ev.start ?? null,
     end: ev.end ?? null,
     allDay: ev.allDay ?? false,
+    timezoneUnknown: ev.timezoneUnknown ?? false,
     location: ev.location ?? null,
     description: ev.description ?? null,
     organizer: ev.organizer ?? null,

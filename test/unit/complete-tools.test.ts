@@ -13,14 +13,14 @@ const unfold = (s: string) => s.replace(/\r?\n[ \t]/g, '');
 
 async function invitationRaw(
   method: 'REQUEST' | 'REPLY',
-  opts: { from?: string; uid?: string; partstat?: string } = {},
+  opts: { from?: string; uid?: string; partstat?: string; attendee?: string } = {},
 ) {
   let ics = buildIcs({
     uid: opts.uid ?? 'meeting-1@partner.local',
     sequence: 2,
     method: 'REQUEST',
     organizer: 'x@partner.local',
-    attendees: ['agent@test.local'],
+    attendees: [opts.attendee ?? 'agent@test.local'],
     title: 'Planning',
     start: new Date('2026-10-10T12:00:00Z'),
     end: new Date('2026-10-10T13:00:00Z'),
@@ -206,9 +206,15 @@ describe('events', () => {
     });
     const w = new InboundWatcher(ctx);
     await w.processNew();
-    imap.add(await invitationRaw('REPLY', { uid: `${ev.id}@test.local`, partstat: 'DECLINED' }));
+    imap.add(
+      await invitationRaw('REPLY', {
+        uid: `${ev.id}@test.local`,
+        partstat: 'DECLINED',
+        attendee: 'x@partner.local',
+      }),
+    );
     await w.processNew();
-    expect(getEvent(ctx, ev.id).responses).toEqual({ 'agent@test.local': 'declined' });
+    expect(getEvent(ctx, ev.id).responses).toEqual({ 'x@partner.local': 'declined' });
   });
 });
 

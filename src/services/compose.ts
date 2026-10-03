@@ -1,5 +1,6 @@
 import { buildReplyIcs } from '../calendar/ics.js';
 import { GatewayError } from '../errors.js';
+import { FORWARD_SEPARATOR, reviewMessage } from '../review/review.js';
 import type { MailboxContext } from './context.js';
 import { deliver } from './deliver.js';
 import { loadAllowed } from './messages.js';
@@ -7,9 +8,6 @@ import type { SendMessageInput } from './schemas.js';
 import { sendMessage } from './send.js';
 
 type Attachments = SendMessageInput['attachments'];
-
-/** Separates a forwarded original from the agent's own text; the review checks only the latter. */
-const FORWARD_SEPARATOR = '---------- Forwarded message ----------';
 
 const unique = (list: string[]) => [...new Set(list.map((a) => a.toLowerCase()))];
 
@@ -102,6 +100,19 @@ export async function respondToInvitation(
   if (!inv.organizer || !inv.start) {
     throw new GatewayError('validation_error', 'The invitation has no organizer or start time');
   }
+  // A comment is free text written by the agent: it goes through the same review as any mail.
+  const note = comment?.trim() || null;
+  const reviewWarnings = note
+    ? await reviewMessage(ctx, {
+        to: [inv.organizer],
+        cc: [],
+        bcc: [],
+        subject: `${VERB[response]}: ${inv.title}`,
+        body_markdown: note,
+        attachments: [],
+        replyTo: { from: parsed.from, subject: parsed.subject, body_markdown: parsed.bodyMarkdown },
+      })
+    : [];
   const content = buildReplyIcs({
     uid: inv.uid,
     sequence: inv.sequence,
@@ -112,7 +123,7 @@ export async function respondToInvitation(
     organizer: inv.organizer,
     attendee: ctx.config.address,
     partstat: PARTSTAT[response],
-    comment: comment?.trim() || null,
+    comment: note,
   });
   const { messageId, warnings } = await deliver(
     ctx,
@@ -122,7 +133,7 @@ export async function respondToInvitation(
       bcc: [],
       subject: `${VERB[response]}: ${inv.title}`,
       markdown:
-        comment?.trim() ||
+        note ??
         `${ctx.config.address} ${VERB[response].toLowerCase()} the invitation "${inv.title}".`,
       attachments: [],
       inReplyTo: parsed.messageId ?? undefined,
@@ -130,5 +141,5 @@ export async function respondToInvitation(
     },
     'send',
   );
-  return { message_id: messageId, warnings };
+  return { message_id: messageId, warnings: [...reviewWarnings, ...warnings] };
 }
