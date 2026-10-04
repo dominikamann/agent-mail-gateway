@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.4]
+
+### Changed
+
+- The Docker image runs on Node.js 26 (base image `node:26-slim`); CI and release builds use
+  Node.js 26 too. Node.js 24 is still supported when running from source.
+- GitHub Actions updated to their current major versions.
+
 ### Documentation
 
 - Security model: health endpoint, webhook isolation, duplicate protection and supply chain.
