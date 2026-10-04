@@ -4,7 +4,7 @@ Thanks for helping! Bug reports, ideas and pull requests are welcome.
 
 ## Setup
 
-Requirements: Node.js 24+, and Docker for the integration tests (they start a GreenMail test
+Requirements: Node.js 26 (24+ supported), and Docker for the integration tests (they start a GreenMail test
 mail server via Testcontainers).
 
 ```bash
