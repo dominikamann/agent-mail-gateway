@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest an idea, a new tool or a new review rule
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like your agent to do?
+      description: Describe the use case, not only the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+  - type: textarea
+    id: security
+    attributes:
+      label: Security considerations
+      description: Could the feature let an agent reach mail or recipients it should not? How would you limit that?

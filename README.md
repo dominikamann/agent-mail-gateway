@@ -1,10 +1,13 @@
 # Agent Mail Gateway
 
-[![CI](https://github.com/dominikamann/agent-mail-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/dominikamann/agent-mail-gateway/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/dominikamann/agent-mail-gateway)](https://github.com/dominikamann/agent-mail-gateway/releases)
-[![Docker image](https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker)](https://github.com/dominikamann/agent-mail-gateway/pkgs/container/agent-mail-gateway)
+[![Tests](https://img.shields.io/github/actions/workflow/status/dominikamann/agent-mail-gateway/ci.yml?branch=main&label=tests&style=flat-square)](https://github.com/dominikamann/agent-mail-gateway/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/dominikamann/agent-mail-gateway?style=flat-square)](https://github.com/dominikamann/agent-mail-gateway/releases)
+[![Docker image](https://img.shields.io/badge/docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/dominikamann/agent-mail-gateway/pkgs/container/agent-mail-gateway)
+[![MCP](https://img.shields.io/badge/MCP-server-6E56CF?style=flat-square)](https://modelcontextprotocol.io)
+[![Node](https://img.shields.io/badge/node-%E2%89%A524-339933?style=flat-square&logo=node.js&logoColor=white)](package.json)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white)](tsconfig.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![MCP server on Glama](https://glama.ai/mcp/servers/dominikamann/agent-mail-gateway/badges/score.svg)](https://glama.ai/mcp/servers/dominikamann/agent-mail-gateway)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Give every AI agent its own email address — without giving it the keys to the mailbox.**
 
