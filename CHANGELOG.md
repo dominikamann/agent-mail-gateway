@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1]
+
+### Changed
+
+- Dependencies updated (fastify, zod, nodemailer, imapflow, mailparser, marked,
+  sanitize-html and others); newer `node:26-slim` base image.
+
 ## [0.4.0]
 
 ### Added
