@@ -41,6 +41,10 @@ export interface EventRecord {
   location: string | null;
   description: string | null;
   attendees: string[];
+  /** Whole days: start and end are UTC midnights, end exclusive. Missing in older records. */
+  allDay?: boolean;
+  /** busy, free, tentative or oof; missing means busy. */
+  showAs?: 'busy' | 'free' | 'tentative' | 'oof';
   /** Answers from attendees, e.g. { "a@b.de": "accepted" }. */
   responses?: Record<string, string>;
   createdAt: number;

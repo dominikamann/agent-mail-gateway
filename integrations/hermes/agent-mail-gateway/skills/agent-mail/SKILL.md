@@ -72,6 +72,11 @@ unless your task explicitly requires it.
   `location`, `description_markdown`, `timezone`. Times like `2026-10-05T14:00` are read in
   your mailbox time zone (or `timezone`); times with an offset or `Z` are used as given.
   Remember the returned event `id`.
+- All-day events (holidays, absences, deadlines): set `all_day: true` and give dates
+  without time, e.g. `start: 2026-10-20`, `end: 2026-10-22` (last day, inclusive; leave
+  `end` out for a single day). `show_as` sets how the time shows in calendars: `busy`
+  (default), `free`, `tentative` or `oof` (out of office) — use `free` for entries that
+  should not block the calendar.
 - To move or change a meeting, use `update_event` with that `id` and only the fields that
   change. Never create a second event for the same meeting — attendees would get a duplicate.
   Attendees you remove receive a cancellation automatically.

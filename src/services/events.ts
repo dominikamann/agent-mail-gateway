@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { buildIcs } from '../calendar/ics.js';
-import { formatInZone, toUtc } from '../calendar/time.js';
+import { formatDay, formatInZone, toUtc } from '../calendar/time.js';
 import { GatewayError } from '../errors.js';
 import { isAllowed, normalizeAddress } from '../policy/address.js';
 import { reviewEvent } from '../review/review.js';
@@ -13,13 +13,16 @@ import {
   releaseSends,
   reserveSends,
 } from './deliver.js';
-import type { EventInput, EventPatch } from './schemas.js';
+import type { EventInput, EventPatch, ShowAs } from './schemas.js';
 
 export interface EventView {
   id: string;
   title: string;
+  /** UTC date-times; for all-day events the first and last day (YYYY-MM-DD). */
   start: string;
   end: string;
+  all_day: boolean;
+  show_as: ShowAs;
   /** Start and end in the event's time zone, readable. */
   start_local: string;
   end_local: string;
@@ -34,14 +37,25 @@ export interface EventView {
   warnings?: string[];
 }
 
+const DAY = 86_400_000;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Last day of an all-day event: its end is the (exclusive) midnight after it. */
+const lastDay = (r: EventRecord) => new Date(Date.parse(r.end) - DAY);
+
 function view(r: EventRecord, warnings?: string[]): EventView {
+  const allDay = r.allDay ?? false;
   return {
     id: r.id,
     title: r.title,
-    start: r.start,
-    end: r.end,
-    start_local: formatInZone(new Date(r.start), r.timezone),
-    end_local: formatInZone(new Date(r.end), r.timezone),
+    start: allDay ? r.start.slice(0, 10) : r.start,
+    end: allDay ? lastDay(r).toISOString().slice(0, 10) : r.end,
+    all_day: allDay,
+    show_as: r.showAs ?? 'busy',
+    start_local: allDay
+      ? formatDay(new Date(r.start))
+      : formatInZone(new Date(r.start), r.timezone),
+    end_local: allDay ? formatDay(lastDay(r)) : formatInZone(new Date(r.end), r.timezone),
     timezone: r.timezone,
     location: r.location,
     description_markdown: r.description,
@@ -53,7 +67,42 @@ function view(r: EventRecord, warnings?: string[]): EventView {
   };
 }
 
-function times(start: string, end: string, tz: string): { start: string; end: string } {
+/** UTC midnight of a date, rejecting dates like 2026-02-30. */
+function dayStart(date: string): Date {
+  const d = new Date(`${date}T00:00:00Z`);
+  if (!DATE.test(date) || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== date) {
+    throw new GatewayError('validation_error', `Not a valid date: ${date}`);
+  }
+  return d;
+}
+
+/** All-day events are stored as UTC midnights; end is the midnight after the last day. */
+function times(
+  start: string,
+  end: string | undefined,
+  tz: string,
+  allDay: boolean,
+): { start: string; end: string } {
+  if (allDay) {
+    if (!DATE.test(start) || (end !== undefined && !DATE.test(end))) {
+      throw new GatewayError(
+        'validation_error',
+        'all_day events take dates without time, e.g. start 2026-10-05',
+      );
+    }
+    const s = dayStart(start);
+    const last = end === undefined ? s : dayStart(end);
+    if (last.getTime() < s.getTime()) {
+      throw new GatewayError('validation_error', 'end must not be before start');
+    }
+    return { start: s.toISOString(), end: new Date(last.getTime() + DAY).toISOString() };
+  }
+  if (DATE.test(start) || (end !== undefined && DATE.test(end))) {
+    throw new GatewayError('validation_error', 'A date without time needs all_day: true');
+  }
+  if (end === undefined) {
+    throw new GatewayError('validation_error', 'end is required unless all_day is true');
+  }
   const s = toUtc(start, tz);
   const e = toUtc(end, tz);
   if (e.getTime() <= s.getTime()) {
@@ -62,12 +111,17 @@ function times(start: string, end: string, tz: string): { start: string; end: st
   return { start: s.toISOString(), end: e.toISOString() };
 }
 
+function when(r: EventRecord): string {
+  if (!r.allDay) {
+    return `${formatInZone(new Date(r.start), r.timezone)} – ${formatInZone(new Date(r.end), r.timezone)}`;
+  }
+  const first = formatDay(new Date(r.start));
+  const last = formatDay(lastDay(r));
+  return `${first === last ? first : `${first} – ${last}`} (all day)`;
+}
+
 function body(r: EventRecord): string {
-  const lines = [
-    `**${r.title}**`,
-    '',
-    `**When:** ${formatInZone(new Date(r.start), r.timezone)} – ${formatInZone(new Date(r.end), r.timezone)}`,
-  ];
+  const lines = [`**${r.title}**`, '', `**When:** ${when(r)}`];
   if (r.location) lines.push(`**Where:** ${r.location}`);
   if (r.description) lines.push('', r.description);
   return lines.join('\n');
@@ -93,6 +147,8 @@ async function send(
     end: new Date(r.end),
     location: r.location,
     description: r.description,
+    allDay: r.allDay ?? false,
+    showAs: r.showAs ?? 'busy',
   });
   const { warnings } = await deliver(
     ctx,
@@ -132,7 +188,7 @@ function reviewOf(
     start: new Date(r.start),
     fields: {
       title: r.title,
-      when: `${formatInZone(new Date(r.start), r.timezone)} – ${formatInZone(new Date(r.end), r.timezone)}`,
+      when: when(r),
       where: r.location,
       attendees: r.attendees,
       ...(cancelledFor.length ? { cancellation_sent_to: cancelledFor } : {}),
@@ -162,7 +218,9 @@ export async function createEvent(ctx: MailboxContext, input: EventInput): Promi
     sequence: 0,
     status: 'active',
     title: input.title,
-    ...times(input.start, input.end, tz),
+    ...times(input.start, input.end, tz, input.all_day ?? false),
+    allDay: input.all_day ?? false,
+    showAs: input.show_as ?? 'busy',
     timezone: tz,
     location: input.location ?? null,
     description: input.description_markdown ?? null,
@@ -204,6 +262,40 @@ export function updateEvent(
   return oneAtATime(ctx, id, () => applyUpdate(ctx, id, patch));
 }
 
+/** Moving only the start keeps the event's duration; switching all_day needs a new start. */
+function newTimes(old: EventRecord, patch: EventPatch, tz: string): { start: string; end: string } {
+  const wasAllDay = old.allDay ?? false;
+  const allDay = patch.all_day ?? wasAllDay;
+  const length = Date.parse(old.end) - Date.parse(old.start);
+  if (allDay !== wasAllDay) {
+    if (patch.start === undefined) {
+      throw new GatewayError(
+        'validation_error',
+        allDay
+          ? 'Switching to all_day needs a new start date'
+          : 'Switching off all_day needs a new start and end',
+      );
+    }
+    return times(patch.start, patch.end, tz, allDay);
+  }
+  if (allDay) {
+    const start = patch.start ?? old.start.slice(0, 10);
+    const end =
+      patch.end ??
+      (patch.start
+        ? new Date(dayStart(patch.start).getTime() + length - DAY).toISOString().slice(0, 10)
+        : lastDay(old).toISOString().slice(0, 10));
+    return times(start, end, tz, true);
+  }
+  return times(
+    patch.start ?? old.start,
+    patch.end ??
+      (patch.start ? new Date(toUtc(patch.start, tz).getTime() + length).toISOString() : old.end),
+    tz,
+    false,
+  );
+}
+
 async function applyUpdate(ctx: MailboxContext, id: string, patch: EventPatch): Promise<EventView> {
   const old = load(ctx, id);
   const tz = patch.timezone ?? old.timezone;
@@ -214,17 +306,9 @@ async function applyUpdate(ctx: MailboxContext, id: string, patch: EventPatch): 
   const rec: EventRecord = {
     ...old,
     title: patch.title ?? old.title,
-    // Moving only the start keeps the event's duration.
-    ...times(
-      patch.start ?? old.start,
-      patch.end ??
-        (patch.start
-          ? new Date(
-              toUtc(patch.start, tz).getTime() + (Date.parse(old.end) - Date.parse(old.start)),
-            ).toISOString()
-          : old.end),
-      tz,
-    ),
+    ...newTimes(old, patch, tz),
+    allDay: patch.all_day ?? old.allDay ?? false,
+    showAs: patch.show_as ?? old.showAs ?? 'busy',
     timezone: tz,
     // undefined keeps the old value, null removes it.
     location: patch.location === undefined ? old.location : patch.location,

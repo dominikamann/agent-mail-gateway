@@ -68,6 +68,11 @@ export function formatInZone(date: Date, timeZone: string): string {
   return `${text} (${timeZone})`;
 }
 
+/** A whole day stored as UTC midnight, e.g. "Tuesday, 20 October 2026". */
+export function formatDay(date: Date): string {
+  return new Intl.DateTimeFormat('en-GB', { dateStyle: 'full', timeZone: 'UTC' }).format(date);
+}
+
 /** Accepts `YYYY-MM-DD` (start of that day) or an ISO date-time, interpreted in `timeZone`. */
 export function resolveSince(value: string, timeZone: string): Date {
   return toUtc(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00` : value, timeZone);

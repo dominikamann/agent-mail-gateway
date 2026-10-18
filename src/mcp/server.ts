@@ -337,7 +337,7 @@ export function createMcpServer(ctx: MailboxContext): McpServer {
     {
       title: 'Send a new calendar invitation',
       description:
-        'Create a meeting and send calendar invitations to the attendees (all on allow_send_to); it appears in Outlook, Gmail and Apple Calendar. Remember the returned id: to change or cancel the meeting use update_event or cancel_event, never create a second one. Times without offset are read in timezone or the mailbox time zone; the invitation is reviewed and counts towards the send limit. Returns the event with id, UTC and local times.',
+        'Create a meeting and send calendar invitations to the attendees (all on allow_send_to); it appears in Outlook, Gmail and Apple Calendar. Remember the returned id: to change or cancel the meeting use update_event or cancel_event, never create a second one. Times without offset are read in timezone or the mailbox time zone; for all-day events (holidays, absences) set all_day and give dates, and show_as free keeps calendars free; the invitation is reviewed and counts towards the send limit. Returns the event with id, UTC and local times.',
       inputSchema: eventShape,
       annotations: SEND,
     },

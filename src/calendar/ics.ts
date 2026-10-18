@@ -2,7 +2,9 @@ import ical, {
   ICalAttendeeRole,
   ICalAttendeeStatus,
   ICalCalendarMethod,
+  ICalEventBusyStatus,
   ICalEventStatus,
+  ICalEventTransparency,
 } from 'ical-generator';
 
 export interface IcsInput {
@@ -16,9 +18,21 @@ export interface IcsInput {
   end: Date;
   location: string | null;
   description: string | null;
+  /** start and end are UTC midnights of whole days, end exclusive. */
+  allDay?: boolean;
+  /** Defaults to busy. */
+  showAs?: 'busy' | 'free' | 'tentative' | 'oof';
 }
 
+const BUSY_STATUS = {
+  busy: ICalEventBusyStatus.BUSY,
+  free: ICalEventBusyStatus.FREE,
+  tentative: ICalEventBusyStatus.TENTATIVE,
+  oof: ICalEventBusyStatus.OOF,
+};
+
 export function buildIcs(input: IcsInput): string {
+  const showAs = input.showAs ?? 'busy';
   const calendar = ical({
     prodId: { company: 'agent-mail-gateway', product: 'gateway', language: 'EN' },
     method: input.method === 'REQUEST' ? ICalCalendarMethod.REQUEST : ICalCalendarMethod.CANCEL,
@@ -29,10 +43,16 @@ export function buildIcs(input: IcsInput): string {
     stamp: new Date(),
     start: input.start,
     end: input.end,
+    allDay: input.allDay ?? false,
     summary: input.title,
     location: input.location ?? undefined,
     description: input.description ?? undefined,
     status: input.method === 'CANCEL' ? ICalEventStatus.CANCELLED : ICalEventStatus.CONFIRMED,
+    // TRANSP for Gmail and Apple; Outlook reads the Microsoft fields (INTENDEDSTATUS for attendees).
+    transparency:
+      showAs === 'free' ? ICalEventTransparency.TRANSPARENT : ICalEventTransparency.OPAQUE,
+    busystatus: BUSY_STATUS[showAs],
+    x: [['X-MICROSOFT-CDO-INTENDEDSTATUS', BUSY_STATUS[showAs]]],
     organizer: { name: input.organizer, email: input.organizer },
     attendees: input.attendees.map((email) => ({
       email,

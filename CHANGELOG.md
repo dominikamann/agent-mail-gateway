@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `create_event` / `update_event` (and `POST`/`PATCH /v1/events`): `all_day` for all-day
+  events over whole days (`start`/`end` as dates, `end` inclusive) and `show_as` (`busy`,
+  `free`, `tentative`, `oof`), sent as `TRANSP` and as Outlook's busy status.
+
 ## [0.3.4]
 
 ### Changed

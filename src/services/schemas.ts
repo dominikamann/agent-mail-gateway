@@ -80,12 +80,32 @@ export const sendMessageShape = {
 export const sendMessageSchema = z.object(sendMessageShape);
 export type SendMessageInput = z.output<typeof sendMessageSchema>;
 
+export const SHOW_AS = ['busy', 'free', 'tentative', 'oof'] as const;
+export type ShowAs = (typeof SHOW_AS)[number];
+
 export const eventShape = {
   title: z.string().min(1).max(500).describe('Meeting title shown in calendars'),
-  start: dateTimeString.describe(
-    'Start, e.g. 2026-10-05T14:00 (mailbox time zone) or with offset/Z',
-  ),
-  end: dateTimeString.describe('End, same format as start; must be after start'),
+  start: z
+    .union([z.iso.date(), dateTimeString])
+    .describe(
+      'Start, e.g. 2026-10-05T14:00 (mailbox time zone) or with offset/Z; for all_day a date like 2026-10-05',
+    ),
+  end: z
+    .union([z.iso.date(), dateTimeString])
+    .optional()
+    .describe(
+      'End, same format as start and after it; for all_day the last day (inclusive, defaults to start)',
+    ),
+  all_day: z
+    .boolean()
+    .optional()
+    .describe('true: all-day event over whole days; start and end are dates. Default false'),
+  show_as: z
+    .enum(SHOW_AS)
+    .optional()
+    .describe(
+      "How the time shows in attendees' calendars: busy (default), free, tentative or oof (out of office)",
+    ),
   timezone: z
     .string()
     .optional()

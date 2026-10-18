@@ -181,11 +181,25 @@ Response: `{ "message_id": "<…@yourmailserver.eu>", "warnings": [] }`. The war
 
 Times may carry an offset (`2026-10-05T14:00:00+02:00`, `…Z`); without one they are read in
 `timezone`, falling back to the mailbox `timezone`. The response contains the event `id`,
-UTC `start`/`end`, `sequence` and `status`.
+UTC `start`/`end`, `all_day`, `show_as`, `sequence` and `status`.
+
+Optional fields:
+
+- `all_day: true` makes an all-day event over whole days. `start` and `end` are then dates
+  (`2026-10-20`); `end` is the last day, inclusive, and defaults to `start`. The response
+  returns these dates as `start`/`end` too.
+- `show_as` sets how the time shows in attendees' calendars: `busy` (default), `free`,
+  `tentative` or `oof` (out of office). It is sent as `TRANSP` and as Outlook's busy status.
+
+```json
+{ "title": "Holiday Alex", "start": "2026-10-20", "end": "2026-10-22", "all_day": true, "show_as": "free", "attendees": ["you@yourmailserver.eu"] }
+```
 
 ### `PATCH /v1/events/{id}`
 
 Any subset of the fields above; `location` or `description_markdown` set to `null` removes it.
+Moving only `start` keeps the length (also in days for all-day events). Switching `all_day`
+on or off needs a new `start` (and for timed events an `end`).
 Changes to the same event are applied one after another, so each gets its own `sequence`;
 answers that arrive meanwhile are kept unless the time changes. All attendees receive an updated invitation (the calendar
 entry is updated in place); attendees removed from the list receive a cancellation.
@@ -288,7 +302,7 @@ REST.
 | `mark_message` | `id`, `unread` |
 | `delete_message` | `id` |
 | `send_message` | `to`, `cc?`, `bcc?`, `subject`, `body_markdown`, `attachments?`, `reply_to_id?` |
-| `create_event` | `title`, `start`, `end`, `timezone?`, `location?`, `description_markdown?`, `attendees` |
+| `create_event` | `title`, `start`, `end` (optional for `all_day`), `all_day?`, `show_as?`, `timezone?`, `location?`, `description_markdown?`, `attendees` |
 | `update_event` | `id` plus any event field (`location` / `description_markdown`: `null` removes it) |
 | `cancel_event` | `id` |
 | `get_event` | `id` — includes attendee `responses` |
