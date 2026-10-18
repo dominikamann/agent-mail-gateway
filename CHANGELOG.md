@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0]
+
 ### Added
 
 - `create_event` / `update_event` (and `POST`/`PATCH /v1/events`): `all_day` for all-day
