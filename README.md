@@ -8,6 +8,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white)](tsconfig.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![MCP server on Glama](https://glama.ai/mcp/servers/dominikamann/agent-mail-gateway/badges/score.svg)](https://glama.ai/mcp/servers/dominikamann/agent-mail-gateway)
+[![Sponsor](https://img.shields.io/badge/support-me-ff5e5b?style=flat-square&logo=ko-fi)](https://github.com/sponsors/dominikamann)
 
 **Give every AI agent its own email address — without giving it the keys to the mailbox.**
 
