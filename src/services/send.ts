@@ -1,35 +1,13 @@
+import { asText, extractText, isPdf } from '../attachments/extract.js';
+import { dangerousAttachment } from '../attachments/filetype.js';
 import { GatewayError } from '../errors.js';
-import { fingerprint, reviewMessage } from '../review/review.js';
+import { isCalendarFile } from '../mail/parse.js';
+import { fingerprint, reviewMessage, scanOutgoing } from '../review/review.js';
 import type { MailboxContext } from './context.js';
 import { assertRecipientsAllowed, assertSendCapacity, deliver } from './deliver.js';
-import { loadAllowed } from './messages.js';
+import { assertNotBlocked, loadAllowed } from './messages.js';
 import type { AttachmentInput, SendMessageInput } from './schemas.js';
 
-/**
- * The content as text if it is UTF-8, UTF-16 (with BOM) or Windows-1252 text with few control
- * characters, else null. Compressed or binary data has far more control bytes and stays binary.
- */
-function asText(content: Buffer): string | null {
-  let text: string;
-  try {
-    if (content[0] === 0xff && content[1] === 0xfe)
-      text = new TextDecoder('utf-16le', { fatal: true }).decode(content);
-    else if (content[0] === 0xfe && content[1] === 0xff)
-      text = new TextDecoder('utf-16be', { fatal: true }).decode(content);
-    else text = new TextDecoder('utf-8', { fatal: true }).decode(content);
-  } catch {
-    // Not UTF: e.g. a CSV exported by Excel. Windows-1252 decodes every byte.
-    text = new TextDecoder('windows-1252').decode(content);
-  }
-  let control = 0;
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i);
-    if (c < 9 || (c > 13 && c < 32)) control++;
-  }
-  return control <= text.length * 0.01 ? text : null;
-}
-
-const CALENDAR = /^(text\/calendar|application\/ics)/i;
 const tooLarge = (ctx: MailboxContext) =>
   new GatewayError('attachment_too_large', `Attachments exceed ${ctx.config.max_attachment_mb} MB`);
 
@@ -58,7 +36,8 @@ async function resolveAttachments(ctx: MailboxContext, list: AttachmentInput[]) 
       }
       const original = source.parsed.attachments[a.from_message.index];
       if (!original) throw new GatewayError('not_found', 'Attachment not found');
-      if (CALENDAR.test(original.contentType) || /\.ics$/i.test(original.filename)) {
+      assertNotBlocked(source.verdict, a.from_message.index);
+      if (isCalendarFile(original)) {
         throw new GatewayError(
           'validation_error',
           'Calendar files from received mail cannot be re-attached; use respond_to_invitation or create_event',
@@ -96,6 +75,37 @@ async function resolveAttachments(ctx: MailboxContext, list: AttachmentInput[]) 
   return out;
 }
 
+/**
+ * Text of PDFs and images for the policies (only when policies are configured: reading images
+ * may call a model). A file that cannot be read stays as it was (binary, if the agent wrote it).
+ */
+async function readForPolicies(
+  ctx: MailboxContext,
+  files: Awaited<ReturnType<typeof resolveAttachments>>,
+): Promise<void> {
+  if (!ctx.config.review.policies) return;
+  for (const f of files) {
+    if (f.text !== undefined) continue;
+    if (!isPdf(f) && !ctx.config.attachments.read_images) continue;
+    try {
+      const text = await extractText(f, {
+        readImages: ctx.config.attachments.read_images,
+        fetch: ctx.fetch,
+        dataDir: ctx.dataDir,
+      });
+      if (text) {
+        f.text = text;
+        delete f.binary;
+      }
+    } catch (err) {
+      ctx.log.warn(
+        { mailbox: ctx.config.name, err: (err as Error).message },
+        'could not read file',
+      );
+    }
+  }
+}
+
 export async function sendMessage(
   ctx: MailboxContext,
   input: SendMessageInput,
@@ -103,6 +113,10 @@ export async function sendMessage(
   assertRecipientsAllowed(ctx, [...input.to, ...input.cc, ...input.bcc]);
 
   const attachments = await resolveAttachments(ctx, input.attachments);
+  const blockedExtensions = ctx.config.attachments.blocked_extensions;
+  const dangerous = attachments.map((a) =>
+    dangerousAttachment(a.filename, a.content, blockedExtensions),
+  );
 
   let subject = input.subject;
   let inReplyTo: string | undefined;
@@ -123,12 +137,7 @@ export async function sendMessage(
   const draft = {
     subject,
     body_markdown: input.body_markdown,
-    attachments: attachments.map((a) => ({
-      filename: a.filename,
-      size: a.content.length,
-      ...(a.text !== undefined ? { text: a.text } : {}),
-      ...(a.binary ? { binary: true } : {}),
-    })),
+    attachments: attachments.map((a) => ({ filename: a.filename, size: a.content.length })),
   };
   // No review (and no model calls) when the send limit is already reached.
   assertSendCapacity(ctx);
@@ -146,9 +155,18 @@ export async function sendMessage(
   }
 
   async function reviewAndSend(): Promise<{ message_id: string; warnings: string[] }> {
+    await scanOutgoing(ctx, attachments, recipients);
+    await readForPolicies(ctx, attachments);
     // Stage 1 rules and optional stage 2 LLM; throws review_rejected before any send slot is used.
     const reviewWarnings = await reviewMessage(ctx, {
       ...draft,
+      attachments: attachments.map((a, i) => ({
+        filename: a.filename,
+        size: a.content.length,
+        ...(a.text !== undefined ? { text: a.text } : {}),
+        ...(a.binary ? { binary: true } : {}),
+        ...(dangerous[i] ? { dangerous: dangerous[i]! } : {}),
+      })),
       duplicateInFlight,
       to: input.to,
       cc: input.cc,

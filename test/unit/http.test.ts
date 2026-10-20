@@ -63,7 +63,7 @@ describe('messages routes', () => {
         from: 'boss@test.local',
         subject: 'S',
         html: '<p>B</p>',
-        attachments: [{ filename: 'r.pdf', content: 'PDF', contentType: 'application/pdf' }],
+        attachments: [{ filename: 'r.pdf', content: '%PDF', contentType: 'application/pdf' }],
       }),
     );
     imap.add(await buildRaw({ from: 'stranger@evil.local' }));
@@ -74,7 +74,7 @@ describe('messages routes', () => {
     const att = await app.inject({ url: `/v1/messages/1-${uid}/attachments/0`, headers: auth });
     expect(att.headers['content-type']).toBe('application/pdf');
     expect(att.headers['content-disposition']).toContain("filename*=UTF-8''r.pdf");
-    expect(att.body).toBe('PDF');
+    expect(att.body).toBe('%PDF');
     const patch = await app.inject({
       method: 'PATCH',
       url: `/v1/messages/1-${uid}`,

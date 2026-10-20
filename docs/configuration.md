@@ -47,6 +47,10 @@ must be set and non-empty.
 | `review.duplicate_window_minutes` | number | `10` | Window for the duplicate-message check (max. 10080 = 7 days); `0` disables it. |
 | `review.llm` | object | — | Language model used by the LLM review and by policies (see below). |
 | `review.policies` | object | — | Own rules checked by the language model, optionally per recipient (see below). |
+| `attachments.clamav` | object | — | ClamAV daemon `{ host, port: 3310, timeout_seconds: 30 }` for virus scans (see below). |
+| `attachments.blocked_extensions` | list | built-in | File types that can run code; replaces the built-in list. |
+| `attachments.read_images` | object | — | Read text in images: `{ engine: vision, url, model }` or `{ engine: ocr, languages }`. |
+| `inbound_checks.<check>` | object | see below | `{ action: hide \| flag \| off, skip_senders: [] }` for `virus`, `dangerous_attachment`, `prompt_injection`, `scan_failed`. |
 | `webhook.url` / `webhook.secret` | string | — | Optional webhook; secret at least 16 characters. |
 
 ### Ports and `security`
@@ -150,6 +154,7 @@ returns the findings as `warnings`, `off` disables them.
 | `missing_subject` | the subject is empty (also `Re:` alone) |
 | `attachment_missing` | the text says "attached", "enclosed", "anbei", "im Anhang", … but nothing is attached |
 | `placeholder` | `{name}`, `{{ field }}`, `[insert …]`, `[Name einfügen]`, `TODO:`, `FIXME:`, "Lorem ipsum" |
+| `dangerous_attachment` | an attachment can run code or hides what it is (see [Attachments](#attachments-and-incoming-mail-checks)) |
 | `duplicate` | the identical message went to the same recipients within `duplicate_window_minutes`, or is being sent right now |
 | `event_in_past` | a calendar invitation starts in the past |
 
@@ -166,9 +171,9 @@ message — never change, send or redirect it.
   answers nonsense (and says so in `warnings`); `block` refuses to send instead.
 - Stage 2 runs only if stage 1 did not already reject the message.
 - Policies see everything a recipient can read: the source text (sent as the plain-text part
-  and in invitations), its rendered form (sent as HTML, entities decoded), and text attachments
-  the agent wrote (`content_text`, or base64 with a text type); invisible format characters
-  (zero-width etc.) are removed first. Files re-attached from received mail are not checked.
+  and in invitations), its rendered form (sent as HTML, entities decoded), and the text of
+  attachments — text files, the text layer of PDFs and, with `attachments.read_images`, the
+  text in images; invisible format characters (zero-width etc.) are removed first.
 
 **Long messages and model context.** Nothing is ever cut off for policies. Text longer than
 `chunk_chars` is split into overlapping parts (`chunk_overlap_chars`; keep it larger than the
@@ -253,11 +258,13 @@ like *"never share financial information"*.
   attachments (any attachment whose bytes are text, whatever its declared type), a forwarded
   original, and for invitations the whole invitation mail (title, time,
   place, description) — long content in several parts (see "Long messages" above).
-- Attachments the agent wrote that are not text (images, PDFs, ...) cannot be read by the
-  model. They are allowed by default; set `policies.binary_attachments: block` to refuse them
-  whenever a policy applies to the recipients. Files from received mail (forwarded or
-  re-attached with `from_message`) are checked when they are text and never blocked otherwise.
-  Text files are read as UTF-8, UTF-16 (with BOM) or Windows-1252.
+- Attachments are checked by their text: text files (read as UTF-8, UTF-16 with BOM or
+  Windows-1252), PDFs with a text layer, and images when `attachments.read_images` is set.
+  Files the agent wrote that stay unreadable (scanned PDFs, images without `read_images`,
+  other binary files) are allowed by default; set `policies.binary_attachments: block` to
+  refuse them whenever a policy applies to the recipients. Files from received mail
+  (forwarded or re-attached with `from_message`) are checked when readable and never blocked
+  for being unreadable.
 - Policies are a strong safeguard against mistakes and most manipulation, but a language model
   is not a guarantee against a determined, hostile agent (e.g. heavy obfuscation). Use allow
   lists for hard limits on *who* can be reached.
@@ -270,6 +277,108 @@ like *"never share financial information"*.
   current title and description, so their rules are checked as well.
 - If the model's answer cannot be understood (also: a rule number that does not exist), the
   check counts as failed and `on_error` decides — by default the message is not sent.
+
+### Attachments and incoming mail checks
+
+Allow lists decide *who* can reach the agent. These checks look at *what* arrives — and at the
+files the agent sends:
+
+| Check | Incoming mail | Outgoing mail | Needs |
+|---|---|---|---|
+| `dangerous_attachment` | finds programs and scripts (by name and by content), Office files with macros, files whose content does not match their name (`invoice.pdf` that is really something else), ZIP files containing programs, password-protected archives | the same, as review rule `dangerous_attachment` (`review.rules` decides: block, warn, off) | nothing |
+| `virus` | every attachment is scanned with ClamAV | every attachment is scanned; a virus — or a scan that cannot run — always stops the message (`review_rejected`, `reviewer: security`) | `attachments.clamav` |
+| `prompt_injection` | the model from `review.llm` checks the text, PDFs and (with `read_images`) images for instructions aimed at an AI | — (outgoing mail has policies) | `review.llm` |
+| `scan_failed` | a check could not run (ClamAV or model unreachable, file unreadable, text too long) | — | — |
+
+```yaml
+    attachments:
+      clamav: { host: clamav, port: 3310 }       # optional
+      read_images:                              # optional
+        engine: vision
+        url: http://ollama:11434/v1
+        model: qwen2.5vl:7b
+    inbound_checks:
+      virus: { action: hide }                   # default
+      dangerous_attachment: { action: flag }    # default
+      prompt_injection:
+        action: flag                            # default
+        skip_senders: [you@yourmailserver.eu]   # your own mail may contain instructions
+      scan_failed: { action: flag }             # default
+```
+
+**What a finding does** — set per check with `action`:
+
+- `hide`: the message is treated like mail from a sender that is not allowed: never listed,
+  `404 not_found` when read by id, moved to Trash on arrival with `non_allowed_action: delete`.
+  Recorded in the audit log (`filtered_delete` / `filtered_keep` with the check as detail).
+- `flag` (default except `virus`): the agent sees the message, with `security_flags` in lists
+  and webhooks and `security: { findings, note }` in `read_message`. Attachments found by
+  `virus` or `dangerous_attachment` get `blocked` with the reason: they cannot be downloaded
+  (`attachment_blocked`), re-attached or forwarded (`forward_message` leaves them out and says
+  so in `warnings`).
+- `off`: the check does not run.
+
+`virus` defaults to `hide` and runs only with `attachments.clamav`; `prompt_injection` runs only
+with `review.llm`. Every finding is written to the audit log (`inbound_findings`).
+
+**`skip_senders`** — addresses or `*@domain` whose mail a check skips. Use it for
+`prompt_injection` with your own address, so you can send your agent instructions by mail
+without them being flagged. It works for every check, but think twice before skipping virus
+scans: a trusted sender's account or computer can be compromised.
+
+**When checks run.** New mail is checked when it arrives (before the webhook is sent), older
+mail when it is first read. Each message is checked once; the result is stored and only
+recomputed when the check settings change. A check that failed (`scan_failed`) is retried when
+the message is accessed again 15 minutes later or more. If a check has `action: hide`, listing
+runs that check on messages it has not seen yet, so hidden mail never shows up (the other
+checks run when a message is read) — this can make the first listing of old mail slower.
+
+A message hidden only because a check failed (`scan_failed: { action: hide }`) is never moved
+to Trash: it stays in INBOX, invisible, and becomes visible once a later check succeeds (no
+webhook is sent for it then).
+
+**Prompt injection check.** Covers the body, the text of attachments and the title, place and
+description of a received calendar invitation. Uses the model from `review.llm` (its `chunk_chars`,
+`chunk_overlap_chars`, `max_chunks` and `timeout_seconds`); `review.llm.mode` does not matter
+for it. Body and attachment texts are checked in parts like policies; the first part that
+contains an injection flags the message. Text beyond `max_chunks` parts is not checked and the
+message gets a `scan_failed` finding. Like the review, the mail is passed as data inside
+nonce-marked JSON, never as instructions. A model is not a guarantee: the agent should still
+treat all mail as data.
+
+**Reading PDFs and images.** PDFs are read with [pdf.js](https://mozilla.github.io/pdf.js/)
+(via `unpdf`, in the gateway, no model needed); scanned PDFs without a text layer have no text.
+Reading a PDF stops after 30 seconds, OCR of an image after 60 (`scan_failed`), so a hostile
+file cannot hold up new mail. A file named or labelled `.pdf` that is really text is read as
+text. Images (PNG, JPEG, GIF, WebP) are read only with `attachments.read_images`:
+
+- `engine: vision` sends the image to an OpenAI-compatible vision model (`url`, `model`,
+  `api_key`, `timeout_seconds: 60`), e.g. `qwen2.5vl:7b`, `gemma3` or `llama3.2-vision` in
+  Ollama. It writes out the text and describes images without text.
+- `engine: ocr` uses [Tesseract](https://github.com/naptha/tesseract.js) inside the gateway, no
+  model needed. `languages` (default `[eng, deu]`) are Tesseract language codes; their data is
+  downloaded once from the jsDelivr CDN to `<data_dir>/tesseract` — set `lang_path` to another
+  URL or a local folder for servers without internet access.
+
+The text is used by the prompt injection check, by policies, and by `get_attachment` with
+`format: "text"` (`GET /v1/messages/{id}/attachments/{index}/text`), which lets agents read a
+PDF or a screenshot for a fraction of the tokens.
+
+**ClamAV.** Uncomment the `clamav` service in [`docker-compose.yml`](../docker-compose.yml) and
+set `attachments.clamav: { host: clamav, port: 3310 }`. It needs about 1–2 GB of RAM and a few
+minutes after the first start to load its virus database; until then scans fail (`scan_failed`
+on incoming mail; outgoing attachments are not sent). Files larger than ClamAV's
+`StreamMaxLength` (default 25 MB) cannot be scanned.
+
+**Blocked file types.** `blocked_extensions` replaces the built-in list: `exe com scr pif bat
+cmd ps1 psm1 vbs vbe js jse wsf wsh msi msp mst hta cpl jar lnk reg scf inf iso img vhd vhdx
+docm dotm xlsm xltm xlam pptm potm ppam ppsm sldm apk app dmg pkg sh dll sys chm application
+gadget url`. Trailing dots and spaces are ignored, as on Windows (`invoice.vbs.` is a `.vbs`).
+Programs are also recognised by their content (Windows, Linux and macOS executables, `#!`
+scripts), whatever their name. ZIP-based files are checked through their file list; archives
+whose list cannot be read (damaged, or Zip64 with more than 65,535 files or over 4 GB) are
+flagged as uncheckable. Images only need to be an image (a PNG named `.jpg` is fine), and
+password-protected Office files (`.docx`, `.xlsx`, `.pptx`) are accepted.
 
 ### Wrong passwords and IP bans
 

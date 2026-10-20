@@ -1,3 +1,4 @@
+import { clamScan } from '../attachments/clamav.js';
 import { htmlToMarkdown } from '../convert/html-to-md.js';
 import { markdownToHtml } from '../convert/md-to-html.js';
 import { GatewayError } from '../errors.js';
@@ -11,6 +12,7 @@ import {
   type MessageDraft,
   splitForward,
 } from './rules.js';
+import { chunks, stripInvisible } from './text.js';
 
 export interface OutgoingMessage extends MessageDraft {
   to: string[];
@@ -35,9 +37,6 @@ function rendered(markdown: string): string {
   return htmlToMarkdown(markdownToHtml(markdown));
 }
 
-/** Invisible format characters (zero-width etc.) that could split words for the model. */
-const stripInvisible = (text: string) => text.replace(/\p{Cf}/gu, '');
-
 /**
  * Everything a recipient can read: the raw source (sent as the plain-text part and in
  * invitations) and its rendered form (sent as HTML, entities decoded), plus text attachments.
@@ -54,18 +53,6 @@ function sentText(
     .map((a) => `\n\n--- attachment ${a.filename} ---\n${a.text}`)
     .join('');
   return stripInvisible(forms + files);
-}
-
-/** Splits text into overlapping parts so nothing is lost at a boundary. */
-function chunks(text: string, size: number, overlapChars: number): string[] {
-  if (text.length <= size) return [text];
-  const overlap = Math.min(overlapChars, Math.floor(size / 2));
-  const out: string[] = [];
-  for (let start = 0; start < text.length; start += size - overlap) {
-    out.push(text.slice(start, start + size));
-    if (start + size >= text.length) break;
-  }
-  return out;
 }
 
 /** For the quality review only (not a security check): one part is enough. */
@@ -95,7 +82,7 @@ function policyApplies(recipients: string[], patterns: string[] | undefined): bo
 
 function reject(
   ctx: MailboxContext,
-  reviewer: 'rules' | 'llm' | 'policy',
+  reviewer: 'rules' | 'llm' | 'policy' | 'security',
   reasons: Finding[],
   recipients: string[],
 ): never {
@@ -214,6 +201,46 @@ function applyRules(
   if (findings.length === 0) return;
   if (ctx.config.review.rules === 'block') reject(ctx, 'rules', findings, recipients);
   warnings.push(...findings.map((f) => `review: ${f.rule}: ${f.message}`));
+}
+
+/**
+ * Virus scan of outgoing attachments (when ClamAV is configured). A virus always blocks; so does
+ * a scan that cannot run, because an unchecked file must not leave in the mailbox's name.
+ */
+export async function scanOutgoing(
+  ctx: MailboxContext,
+  files: { filename: string; content: Buffer }[],
+  recipients: string[],
+): Promise<void> {
+  const clamav = ctx.config.attachments.clamav;
+  if (!clamav) return;
+  for (const f of files) {
+    let result: Awaited<ReturnType<typeof clamScan>>;
+    try {
+      result = await clamScan(clamav, f.content);
+    } catch (err) {
+      ctx.log.warn({ mailbox: ctx.config.name, err: (err as Error).message }, 'virus scan failed');
+      reject(
+        ctx,
+        'security',
+        [
+          {
+            rule: 'virus_scan_failed',
+            message: `The virus scan of ${f.filename} failed; try again later.`,
+          },
+        ],
+        recipients,
+      );
+    }
+    if (result.infected) {
+      reject(
+        ctx,
+        'security',
+        [{ rule: 'virus', message: `${f.filename} contains a virus (${result.signature}).` }],
+        recipients,
+      );
+    }
+  }
 }
 
 /**

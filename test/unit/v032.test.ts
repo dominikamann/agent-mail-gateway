@@ -148,7 +148,7 @@ describe('minor fixes', () => {
             content: 'BEGIN:VCALENDAR',
             contentType: 'application/octet-stream',
           },
-          { filename: 'a.pdf', content: 'PDF', contentType: 'application/pdf' },
+          { filename: 'a.pdf', content: '%PDF', contentType: 'application/pdf' },
         ],
       }),
     );

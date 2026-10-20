@@ -14,6 +14,8 @@ export interface MailboxContext {
   now: () => number;
   /** HTTP client for the optional LLM review; defaults to the global fetch. */
   fetch?: typeof fetch;
+  /** server.data_dir: where OCR language data is cached. */
+  dataDir?: string;
 }
 
 export function recordAudit(

@@ -12,5 +12,15 @@ services:
       - ./config.yaml:/config/config.yaml:ro
       - gateway-data:/data
 
+  # Optional virus scanner for attachments: uncomment, then set
+  # attachments.clamav: { host: clamav, port: 3310 } in config.yaml.
+  # Needs about 1-2 GB of RAM and loads its virus database for a few minutes after start.
+  # clamav:
+  #   image: clamav/clamav:stable
+  #   restart: unless-stopped
+  #   volumes:
+  #     - clamav-db:/var/lib/clamav
+
 volumes:
   gateway-data:
+  # clamav-db:

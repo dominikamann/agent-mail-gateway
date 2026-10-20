@@ -81,7 +81,7 @@ describe('MCP', () => {
     const uid = t.imap.add(
       await buildRaw({
         from: 'boss@test.local',
-        attachments: [{ filename: 'a.pdf', content: 'abc', contentType: 'application/pdf' }],
+        attachments: [{ filename: 'a.pdf', content: '%PDF abc', contentType: 'application/pdf' }],
       }),
     );
     app = await buildApp(new Gateway([t.ctx]));
@@ -91,7 +91,7 @@ describe('MCP', () => {
       arguments: { id: `1-${uid}`, index: 0 },
     })) as { content: { type: string; resource: { blob: string; mimeType: string } }[] };
     expect(res.content[0]!.type).toBe('resource');
-    expect(Buffer.from(res.content[0]!.resource.blob, 'base64').toString()).toBe('abc');
+    expect(Buffer.from(res.content[0]!.resource.blob, 'base64').toString()).toBe('%PDF abc');
     await client.close();
   });
 

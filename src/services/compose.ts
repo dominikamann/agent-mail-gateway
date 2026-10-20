@@ -1,5 +1,6 @@
 import { buildReplyIcs } from '../calendar/ics.js';
 import { GatewayError } from '../errors.js';
+import { isCalendarFile } from '../mail/parse.js';
 import { FORWARD_SEPARATOR, reviewMessage } from '../review/review.js';
 import type { MailboxContext } from './context.js';
 import { assertSendCapacity, deliver } from './deliver.js';
@@ -49,7 +50,7 @@ export async function forwardMessage(
     include_attachments: boolean;
   },
 ): Promise<{ message_id: string; warnings: string[] }> {
-  const { parsed } = await loadAllowed(ctx, id);
+  const { parsed, verdict } = await loadAllowed(ctx, id);
   const sender = parsed.fromName
     ? `${parsed.fromName} <${parsed.from}>`
     : (parsed.from ?? 'unknown');
@@ -67,14 +68,13 @@ export async function forwardMessage(
     ? // Referenced, not re-uploaded: like re-attached files, they are not the agent's own text.
       parsed.attachments
         .map((a, index) => ({ a, index }))
-        .filter(
-          ({ a }) =>
-            !/^(text\/calendar|application\/ics)/i.test(a.contentType) &&
-            !/\.ics$/i.test(a.filename),
-        )
+        .filter(({ a, index }) => !isCalendarFile(a) && !verdict.blocked.has(index))
         .map(({ index }) => ({ from_message: { id, index } }))
     : [];
-  return sendMessage(ctx, {
+  const withheld = input.include_attachments
+    ? parsed.attachments.filter((a) => verdict.blocked.has(a.index)).map((a) => a.filename)
+    : [];
+  const result = await sendMessage(ctx, {
     to: input.to,
     cc: input.cc,
     bcc: input.bcc,
@@ -82,6 +82,10 @@ export async function forwardMessage(
     body_markdown: body,
     attachments,
   });
+  if (withheld.length > 0) {
+    result.warnings.push(`blocked attachments were not forwarded: ${withheld.join(', ')}`);
+  }
+  return result;
 }
 
 const PARTSTAT = { accept: 'ACCEPTED', decline: 'DECLINED', tentative: 'TENTATIVE' } as const;

@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import pino from 'pino';
+import { stopOcr } from './attachments/extract.js';
 import type { Config } from './config/schema.js';
 import { buildApp } from './http/app.js';
 import { ImapFlowMailbox } from './mail/imap.js';
@@ -41,6 +42,7 @@ export async function startGateway(
       store,
       log: mbLog,
       now: Date.now,
+      dataDir: config.server.data_dir,
     };
   });
   const gateway = new Gateway(contexts);
@@ -79,6 +81,7 @@ export async function startGateway(
       await dispatcher.stop();
       await Promise.all(contexts.map((c) => c.imap.stop()));
       for (const c of contexts) c.smtp.close();
+      await stopOcr();
       store.close();
     },
   };

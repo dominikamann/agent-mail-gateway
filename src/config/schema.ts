@@ -17,6 +17,82 @@ const addressPattern = z
     message: 'must be an email address or *@domain',
   });
 
+/** A model endpoint URL: OpenAI-compatible, without credentials in it. */
+const modelUrl = z.url().refine(
+  (u) => {
+    try {
+      const parsed = new URL(u);
+      return !parsed.username && !parsed.password;
+    } catch {
+      return false;
+    }
+  },
+  { message: 'must not contain credentials (user:password@); use api_key instead' },
+);
+
+/** File types that can run code; blocked as attachments by default (in and out). */
+export const DEFAULT_BLOCKED_EXTENSIONS = [
+  'exe',
+  'com',
+  'scr',
+  'pif',
+  'bat',
+  'cmd',
+  'ps1',
+  'psm1',
+  'vbs',
+  'vbe',
+  'js',
+  'jse',
+  'wsf',
+  'wsh',
+  'msi',
+  'msp',
+  'mst',
+  'hta',
+  'cpl',
+  'jar',
+  'lnk',
+  'reg',
+  'scf',
+  'inf',
+  'iso',
+  'img',
+  'vhd',
+  'vhdx',
+  'docm',
+  'dotm',
+  'xlsm',
+  'xltm',
+  'xlam',
+  'pptm',
+  'potm',
+  'ppam',
+  'ppsm',
+  'sldm',
+  'apk',
+  'app',
+  'dmg',
+  'pkg',
+  'sh',
+  'dll',
+  'sys',
+  'chm',
+  'application',
+  'gadget',
+  'url',
+];
+
+/** One check on incoming mail: what a finding does, and senders it is not run for. */
+const inboundCheck = (action: 'hide' | 'flag' | 'off') =>
+  z
+    .object({
+      action: z.enum(['hide', 'flag', 'off']).default(action),
+      skip_senders: z.array(addressPattern).default([]),
+    })
+    .strict()
+    .prefault({});
+
 const endpoint = z
   .object({
     host: z.string().min(1),
@@ -54,17 +130,7 @@ export const mailboxSchema = z
         duplicate_window_minutes: z.coerce.number().int().min(0).max(10_080).default(10),
         llm: z
           .object({
-            url: z.url().refine(
-              (u) => {
-                try {
-                  const parsed = new URL(u);
-                  return !parsed.username && !parsed.password;
-                } catch {
-                  return false;
-                }
-              },
-              { message: 'must not contain credentials (user:password@); use api_key instead' },
-            ),
+            url: modelUrl,
             model: z.string().min(1),
             api_key: z.string().min(1).optional(),
             mode: z.enum(['block', 'warn', 'off']).default('warn'),
@@ -107,6 +173,64 @@ export const mailboxSchema = z
         message: 'review.policies needs review.llm (the model that checks the rules)',
         path: ['policies'],
       })
+      .prefault({}),
+    attachments: z
+      .object({
+        /** ClamAV daemon (clamd) for virus scans of incoming and outgoing attachments. */
+        clamav: z
+          .object({
+            host: z.string().min(1),
+            port: z.coerce.number().int().min(1).max(65535).default(3310),
+            timeout_seconds: z.coerce.number().int().min(1).max(300).default(30),
+          })
+          .strict()
+          .optional(),
+        blocked_extensions: z
+          .array(
+            z
+              .string()
+              .trim()
+              .toLowerCase()
+              .transform((e) => e.replace(/^\./, ''))
+              .pipe(z.string().regex(/^[a-z0-9-]+$/, 'a file extension like exe')),
+          )
+          .default(DEFAULT_BLOCKED_EXTENSIONS),
+        /** Text from images: a vision model (OpenAI-compatible) or local OCR (Tesseract). */
+        read_images: z
+          .discriminatedUnion('engine', [
+            z
+              .object({
+                engine: z.literal('vision'),
+                url: modelUrl,
+                model: z.string().min(1),
+                api_key: z.string().min(1).optional(),
+                timeout_seconds: z.coerce.number().int().min(1).max(300).default(60),
+              })
+              .strict(),
+            z
+              .object({
+                engine: z.literal('ocr'),
+                languages: z
+                  .array(z.string().regex(/^[a-z_]+$/))
+                  .min(1)
+                  .default(['eng', 'deu']),
+                /** Where language data is loaded from; default: the jsDelivr CDN. */
+                lang_path: z.string().min(1).optional(),
+              })
+              .strict(),
+          ])
+          .optional(),
+      })
+      .strict()
+      .prefault({}),
+    inbound_checks: z
+      .object({
+        virus: inboundCheck('hide'),
+        dangerous_attachment: inboundCheck('flag'),
+        prompt_injection: inboundCheck('flag'),
+        scan_failed: inboundCheck('flag'),
+      })
+      .strict()
       .prefault({}),
     webhook: z
       .object({ url: z.url(), secret: z.string().min(16) })

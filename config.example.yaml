@@ -93,6 +93,34 @@ mailboxes:
       #     - rule: Never mention gifts or presents.
       #       recipients: [alex@yourmailserver.eu]
 
+    # Attachments, incoming and outgoing (see docs/configuration.md#attachments-and-incoming-mail-checks).
+    # attachments:
+    #   # Optional virus scan with ClamAV (the clamav service in docker-compose.yml).
+    #   clamav: { host: clamav, port: 3310 }
+    #   # File types that can run code; replaces the built-in list (exe, js, bat, docm, xlsm, ...).
+    #   # blocked_extensions: [exe, js, bat, cmd, ps1, vbs, msi, docm, xlsm]
+    #   # Read text in images (for the prompt injection check, policies and get_attachment):
+    #   read_images:
+    #     engine: vision                 # a vision model, e.g. qwen2.5vl or gemma3 in Ollama
+    #     url: http://ollama:11434/v1
+    #     model: qwen2.5vl:7b
+    #   # or local OCR without a model (language data is downloaded once to /data/tesseract):
+    #   # read_images: { engine: ocr, languages: [eng, deu] }
+
+    # What happens to received mail that a check finds something in:
+    #   hide - like mail from a sender that is not allowed (moved to Trash or kept, never shown)
+    #   flag - shown to the agent with a warning; dangerous attachments cannot be downloaded
+    #   off  - the check does not run
+    # skip_senders: addresses or "*@domain" whose mail the check skips (e.g. you, so you can
+    # give your agent instructions by mail).
+    # inbound_checks:
+    #   virus: { action: hide }                    # needs attachments.clamav
+    #   dangerous_attachment: { action: flag }     # programs, macros, disguised files
+    #   prompt_injection:                          # needs review.llm
+    #     action: flag
+    #     skip_senders: [you@yourmailserver.eu]
+    #   scan_failed: { action: flag }              # a check could not run (scanner/model down)
+
     # Optional: called with a signed POST whenever an allowed message arrives, e.g. a
     # Hermes Agent webhook route (see docs/hermes.md). Remove the comment marks to enable.
     # webhook:

@@ -9,7 +9,14 @@ export interface MessageDraft {
   subject: string;
   body_markdown: string;
   /** `text`: content of a text attachment written by the agent (checked by policies). */
-  attachments: { filename: string; size: number; text?: string; binary?: boolean }[];
+  attachments: {
+    filename: string;
+    size: number;
+    text?: string;
+    binary?: boolean;
+    /** Why the file can run code or hides its type (see attachments/filetype.ts). */
+    dangerous?: string;
+  }[];
 }
 
 const ATTACHMENT_MENTION =
@@ -72,6 +79,14 @@ export function checkMessageRules(d: MessageDraft): Finding[] {
       rule: 'attachment_missing',
       message: 'The text mentions an attachment, but nothing is attached.',
     });
+  }
+  for (const a of d.attachments) {
+    if (a.dangerous) {
+      findings.push({
+        rule: 'dangerous_attachment',
+        message: `Attachment not allowed: ${a.dangerous}.`,
+      });
+    }
   }
   const placeholder = PLACEHOLDERS.map((re) => re.exec(own)?.[0]).find(Boolean);
   if (placeholder) {

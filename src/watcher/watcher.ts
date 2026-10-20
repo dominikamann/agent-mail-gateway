@@ -1,3 +1,4 @@
+import { inspect, scanEnabled } from '../inbound/scan.js';
 import { encodeMessageId } from '../mail/ids.js';
 import type { MessageMeta } from '../mail/imap.js';
 import { type ParsedMessage, parseHeaders } from '../mail/parse.js';
@@ -139,8 +140,23 @@ export class InboundWatcher {
       return;
     }
 
-    if (!config.webhook && !meta.hasCalendar) return;
-    const parsed = await parseForSummary(this.ctx, meta);
+    const scanning = scanEnabled(config);
+    if (!config.webhook && !meta.hasCalendar && !scanning) return;
+    // The checks need the whole message, also when it is too large for a preview.
+    const full = scanning ? (await imap.fetch([uid]))[0] : undefined;
+    const parsed = await parseForSummary(this.ctx, meta, full);
+    const verdict = await inspect(this.ctx, validity, uid, parsed);
+    if (verdict.hiddenBy) {
+      // Hidden like mail from a sender that is not allowed. A check that only failed never
+      // deletes: the mail stays in INBOX and is checked again later.
+      if (config.non_allowed_action === 'delete' && verdict.hiddenBy !== 'scan_failed') {
+        await imap.moveToTrash(uid);
+        recordAudit(this.ctx, 'filtered_delete', counterparts, 'ok', verdict.hiddenBy);
+      } else {
+        recordAudit(this.ctx, 'filtered_keep', counterparts, 'ok', verdict.hiddenBy);
+      }
+      return;
+    }
 
     this.recordReply(parsed, headers?.from ?? null);
 
@@ -156,6 +172,9 @@ export class InboundWatcher {
           subject: parsed.subject,
           date: parsed.date,
           preview: parsed.preview,
+          ...(verdict.findings.length > 0
+            ? { security_flags: [...new Set(verdict.findings.map((f) => f.type))] }
+            : {}),
         },
       });
       store.enqueueWebhook(config.name, id, payload, this.ctx.now());

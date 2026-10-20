@@ -17,7 +17,8 @@ export type AuditAction =
   | 'delete'
   | 'filtered_delete'
   | 'filtered_keep'
-  | 'review_rejected';
+  | 'review_rejected'
+  | 'inbound_findings';
 
 export interface AuditEntry {
   at: number;
@@ -76,6 +77,10 @@ export class Store {
       CREATE TABLE IF NOT EXISTS audit (
         id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, mailbox TEXT NOT NULL,
         action TEXT NOT NULL, counterparts TEXT NOT NULL, result TEXT NOT NULL, detail TEXT);
+      CREATE TABLE IF NOT EXISTS scans (
+        mailbox TEXT NOT NULL, uid_validity TEXT NOT NULL, uid INTEGER NOT NULL,
+        settings TEXT NOT NULL, findings TEXT NOT NULL, at INTEGER NOT NULL,
+        PRIMARY KEY (mailbox, uid_validity, uid));
     `);
   }
 
@@ -181,12 +186,45 @@ export class Store {
     );
   }
 
+  /** Stored result of the inbound checks for one message, if made with the same settings. */
+  getScan<T>(
+    mailbox: string,
+    uidValidity: string,
+    uid: number,
+    settings: string,
+  ): { data: T; at: number } | null {
+    const row = this.db
+      .prepare(
+        'SELECT findings, at FROM scans WHERE mailbox = ? AND uid_validity = ? AND uid = ? AND settings = ?',
+      )
+      .get(mailbox, uidValidity, uid, settings) as Row | undefined;
+    return row ? { data: JSON.parse(String(row.findings)) as T, at: Number(row.at) } : null;
+  }
+
+  saveScan(
+    mailbox: string,
+    uidValidity: string,
+    uid: number,
+    settings: string,
+    data: unknown,
+    at: number,
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO scans (mailbox, uid_validity, uid, settings, findings, at) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (mailbox, uid_validity, uid) DO UPDATE SET
+           settings = excluded.settings, findings = excluded.findings, at = excluded.at`,
+      )
+      .run(mailbox, uidValidity, uid, settings, JSON.stringify(data), at);
+  }
+
   /** Removes rows nobody needs anymore so the database does not grow forever. */
   prune(now: number): void {
     const day = 86_400_000;
     this.db.prepare('DELETE FROM sends WHERE at < ?').run(now - 2 * 3_600_000);
     this.db.prepare('DELETE FROM fingerprints WHERE at < ?').run(now - 7 * day);
     this.db.prepare('DELETE FROM audit WHERE at < ?').run(now - 180 * day);
+    this.db.prepare('DELETE FROM scans WHERE at < ?').run(now - 90 * day);
     this.db
       .prepare(`DELETE FROM webhooks WHERE status != 'pending' AND next_attempt_at < ?`)
       .run(now - 30 * day);

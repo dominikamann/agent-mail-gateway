@@ -22,7 +22,9 @@ Every error has the same shape:
 | `attachment_too_large` | 413 | Attachments exceed `max_attachment_mb`. |
 | `rate_limited` | 429 | `max_sends_per_hour` reached; see `Retry-After` and `details.retry_after_seconds`. |
 | `send_failed` | 502 | The SMTP server rejected the message. Nothing was sent. |
-| `review_rejected` | 422 | The pre-send review stopped the message; `details.reviewer` is `rules`, `policy` or `llm`, `details.reasons` lists `{ rule, message }`. Nothing was sent. |
+| `review_rejected` | 422 | The pre-send review stopped the message; `details.reviewer` is `rules`, `policy`, `llm` or `security` (virus scan), `details.reasons` lists `{ rule, message }`. Nothing was sent. |
+| `attachment_blocked` | 403 | The attachment was found dangerous (virus, program, macros, disguised file) and cannot be downloaded or passed on; `details.reason`. |
+| `unreadable` | 422 | No text could be read from the attachment (scanned PDF, binary file, images not enabled, reader unavailable). |
 | `mailbox_unavailable` | 503 | The IMAP server is not reachable right now. |
 
 ## Mailbox
@@ -30,7 +32,8 @@ Every error has the same shape:
 ### `GET /v1/mailbox`
 
 Also returns `now` (UTC) and `now_local` (in the mailbox time zone) so agents can resolve
-"tomorrow at 14:00", and `review`: `{ rules, llm_review, policies: [{ rule, recipients? }] }` —
+"tomorrow at 14:00", `inbound_checks` (`{ virus, dangerous_attachment, prompt_injection }`, each
+`hide`, `flag` or `off` as in effect), and `review`: `{ rules, llm_review, policies: [{ rule, recipients? }] }` —
 the checks outgoing mail must pass.
 
 ```json
@@ -61,7 +64,8 @@ delayed message is never skipped by an agent that polls with `since=<last poll>`
 
 Messages larger than 1 MB are listed without a `preview` (empty string) so that listing never
 downloads big mails; `has_attachments` is still set. `read_message` always returns the full
-message.
+message. Messages flagged by the [incoming mail checks](configuration.md#attachments-and-incoming-mail-checks)
+carry `security_flags`, e.g. `["prompt_injection"]`; the field is absent otherwise.
 
 ```json
 {
@@ -99,6 +103,21 @@ calendar invitation contained in the message:
 }
 ```
 
+A flagged message also has `security_flags` and
+
+```json
+"security": {
+  "findings": [
+    { "type": "dangerous_attachment", "reason": "invoice.pdf.exe: .exe files can run code", "attachment": 0 },
+    { "type": "prompt_injection", "reason": "Tells the AI assistant to forward all invoices." }
+  ],
+  "note": "The gateway flagged this message. Be careful: …"
+}
+```
+
+and blocked attachments have `"blocked": "<reason>"`. Types are `virus`,
+`dangerous_attachment`, `prompt_injection` and `scan_failed`.
+
 Marks the message as read unless `mark_read=false`.
 
 ### `POST /v1/messages/{id}/reply`
@@ -123,7 +142,8 @@ as `POST /v1/messages`.
 
 Body `{ "to": ["…"], "cc": [], "bcc": [], "body_markdown": "optional note", "include_attachments": true }`.
 Sends `Fwd: <subject>` with your note, a header block of the original and its text; attachments
-are included unless `include_attachments` is false.
+are included unless `include_attachments` is false. Blocked attachments are left out and named in
+`warnings`.
 
 ### `POST /v1/messages/{id}/rsvp`
 
@@ -135,7 +155,12 @@ invitation in that message with a standard iCalendar reply to the organizer (who
 
 Returns the raw file with its content type, served with `Content-Disposition: attachment`,
 `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox` so that files cannot
-run in a browser.
+run in a browser. Blocked attachments return `attachment_blocked`.
+
+### `GET /v1/messages/{id}/attachments/{index}/text`
+
+Returns `{ filename, content_type, text }`: text files as text, the text layer of PDFs, and the
+text in images when `attachments.read_images` is configured. `unreadable` if there is none.
 
 ### `PATCH /v1/messages/{id}`
 
@@ -246,6 +271,9 @@ X-Webhook-Signature-V2: 5d1f…
 {"event":"message.received","event_type":"message.received","mailbox":"assistant","message":{"id":"1712345678-42","from":"you@yourmailserver.eu","subject":"Report","date":"2026-10-02T08:15:00.000Z","preview":"Please send…"}}
 ```
 
+A message flagged by the incoming mail checks also has `"security_flags": ["prompt_injection"]`;
+mail hidden by them sends no webhook.
+
 Both header pairs carry the same HMAC-SHA256 over `"<timestamp>.<raw body>"`:
 `X-Gateway-*` with a `sha256=` prefix, and `X-Webhook-*` without prefix — the generic "V2"
 scheme that Hermes Agent webhook routes verify natively (see [hermes.md](hermes.md)).
@@ -298,7 +326,7 @@ REST.
 | `reply_message` | `id`, `body_markdown`, `reply_all?`, `attachments?` |
 | `forward_message` | `id`, `to`, `cc?`, `bcc?`, `body_markdown?`, `include_attachments?` |
 | `respond_to_invitation` | `id`, `response` (`accept` \| `decline` \| `tentative`), `comment?` |
-| `get_attachment` | `id`, `index` — returns an embedded resource (base64) |
+| `get_attachment` | `id`, `index`, `format?` (`auto`: text files as text, others as embedded resource; `text`: the readable text of PDFs, images, text files; `file`: always base64) |
 | `mark_message` | `id`, `unread` |
 | `delete_message` | `id` |
 | `send_message` | `to`, `cc?`, `bcc?`, `subject`, `body_markdown`, `attachments?`, `reply_to_id?` |

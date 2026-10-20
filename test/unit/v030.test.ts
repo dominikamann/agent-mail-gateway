@@ -257,7 +257,7 @@ describe('attachments made easy', () => {
         from: 'boss@test.local',
         subject: 'File',
         text: 'here',
-        attachments: [{ filename: 'c.pdf', content: 'PDF!', contentType: 'application/pdf' }],
+        attachments: [{ filename: 'c.pdf', content: '%PDF!', contentType: 'application/pdf' }],
       }),
     );
     await sendMessage(
@@ -265,7 +265,7 @@ describe('attachments made easy', () => {
       mail({ attachments: [{ from_message: { id: `1-${uid}`, index: 0 } }] } as never),
     );
     const a = (await parseMessage(smtp.sent[0]!.raw)).attachments[0]!;
-    expect([a.filename, a.content.toString()]).toEqual(['c.pdf', 'PDF!']);
+    expect([a.filename, a.content.toString()]).toEqual(['c.pdf', '%PDF!']);
   });
   it('requires exactly one content source', () => {
     expect(() =>

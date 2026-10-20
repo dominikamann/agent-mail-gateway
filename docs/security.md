@@ -15,6 +15,12 @@
 - **Inbound filtering.** Mail from senders outside `allow_receive_from` — or failing sender
   authentication when `require_sender_auth` is on — is never returned by any endpoint or tool,
   including direct reads by id (`404`). By default it is moved to Trash.
+- **Attachment and content checks (optional per check).** Incoming attachments are checked for
+  programs, macros and disguised file types (on by default), for viruses with ClamAV, and
+  incoming text, PDFs and images for prompt injection with a model; findings hide the message
+  or flag it, and flagged dangerous files cannot be downloaded or passed on. Outgoing files go
+  through the same file type rules and virus scan; a file that cannot be scanned is not sent.
+  See [configuration.md](configuration.md#attachments-and-incoming-mail-checks).
 - **Outbound enforcement.** Every recipient and attendee must be on `allow_send_to`; a single
   violation rejects the entire request.
 - **Rate limit.** `max_sends_per_hour` stops a looping agent from sending floods; the
@@ -40,6 +46,17 @@
 - **Bounded work per request.** Message and description texts are limited to 512,000
   characters, at most 20 attachments per message, and the send limit is checked before any
   review model is called.
+
+## Limits of content checks
+
+- The prompt injection check is a language model. It catches obvious and most hidden
+  attempts, but not every one; agents must still treat all mail as data (the MCP instructions
+  and the Hermes skill say so). Mail from `skip_senders` is not checked at all.
+- File type rules look at names, the first bytes and the file list of ZIP-based files; they do
+  not unpack archives or inspect older Office formats (`.doc`, `.xls`) for macros — use ClamAV
+  for that.
+- Text from PDFs and images is extracted inside the gateway (pdf.js, Tesseract) or by the
+  configured vision model; files are never opened by other programs.
 
 ## Sender spoofing
 

@@ -5,6 +5,7 @@ import { forwardMessage, replyMessage, respondToInvitation } from '../../service
 import {
   deleteMessage,
   getAttachment,
+  getAttachmentText,
   getMessage,
   listMessages,
   markMessage,
@@ -92,6 +93,18 @@ export const messageRoutes: FastifyPluginAsyncZod = async (app) => {
         )
         .send(a.content);
     },
+  );
+
+  app.get(
+    '/messages/:id/attachments/:index/text',
+    {
+      schema: {
+        tags,
+        summary: 'Read an attachment as text (text files, PDFs, images if enabled)',
+        params: z.object({ id: z.string(), index: z.coerce.number().int().min(0) }),
+      },
+    },
+    async (req) => getAttachmentText(mailboxOf(req), req.params.id, req.params.index),
   );
 
   app.patch(

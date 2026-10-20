@@ -6,6 +6,42 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0]
+
+### Added
+
+- Incoming mail checks, each with its own action (`hide`, `flag`, `off`) and `skip_senders`
+  under `inbound_checks`:
+  - `dangerous_attachment` (default `flag`): programs and scripts (by name and content),
+    Office files with macros, disguised file types, ZIP files containing programs,
+    password-protected archives.
+  - `virus` (default `hide`): virus scan with ClamAV (`attachments.clamav`); optional
+    `clamav` service in `docker-compose.yml`.
+  - `prompt_injection` (default `flag`, needs `review.llm`): the model checks the text, PDFs and
+    images of received mail for instructions aimed at an AI.
+  - `scan_failed` (default `flag`): a check could not run.
+  Flagged mail carries `security_flags` (lists, webhooks) and `security` (`read_message`);
+  dangerous attachments are `blocked` and cannot be downloaded, re-attached or forwarded
+  (`attachment_blocked`). Results are stored, so each message is checked once.
+- Outgoing attachments: new review rule `dangerous_attachment`; virus scan with ClamAV (a
+  virus or a failed scan stops the message, `reviewer: security`).
+- Text from PDFs (pdf.js) and, with `attachments.read_images`, from images (vision model or
+  Tesseract OCR): read by policies and the prompt injection check, and available to agents via
+  `get_attachment` with `format: "text"` and `GET /v1/messages/{id}/attachments/{index}/text`.
+- `get_mailbox_info` shows the incoming mail checks in effect.
+
+### Changed
+
+- Received attachments that are programs, Office files with macros or disguised file types are
+  now flagged and blocked by default (`inbound_checks.dangerous_attachment.action: off` restores
+  the old behaviour); outgoing ones are rejected by the rules review.
+- With policies, PDFs and images (with `read_images`) are checked by their text, so
+  `binary_attachments: block` only refuses files that stay unreadable.
+
+### Fixed
+
+- Listing could skip messages after an unparsable one when a page filled up mid-batch.
+
 ## [0.4.1]
 
 ### Changed

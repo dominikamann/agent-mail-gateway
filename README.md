@@ -35,6 +35,7 @@ The gateway keeps the password to itself and enforces your rules on every reques
 | Reads every mail, incl. spam and phishing | Sees only mail from senders you allow |
 | Can write to anyone | Can only write to recipients you allow |
 | Sloppy or wrong mails go out | Every mail is checked before sending (rules, optional LLM, your policies) |
+| Malware and prompt injections reach the agent | Attachments and content are checked on arrival: hidden or flagged |
 | HTML mails cost thousands of tokens | Mail arrives as compact Markdown |
 
 ## Features
@@ -42,6 +43,8 @@ The gateway keeps the password to itself and enforces your rules on every reques
 **Mailbox access**
 - List, search, read, mark, delete; attachments in and out — as text, base64 or straight from
   a received message, so agents never have to juggle base64 for a CSV.
+- PDFs and images as text for the agent (`get_attachment` with `format: "text"`): PDF text
+  layer built in, images via a vision model or local OCR (Tesseract).
 - Reply (incl. reply-all) and forward — the gateway fills in recipients, `Re:`/`Fwd:` and threading.
 - HTML → Markdown for reading, Markdown → HTML for sending.
 
@@ -55,6 +58,10 @@ The gateway keeps the password to itself and enforces your rules on every reques
   (`name@domain` or `*@domain`). Everything else is invisible to the agent and moved to Trash
   (or kept).
 - Forged senders are rejected (SPF/DKIM/DMARC as checked by your mail server).
+- Attachment and content checks on incoming mail, each set to hide, flag or off and skippable
+  per sender: dangerous files (programs, macros, disguised file types — on by default), virus
+  scan with ClamAV, and a prompt injection check of text, PDFs and images (details
+  [below](#incoming-mail-checks)).
 - Send limit per hour, audit log of every send, rejection and deletion.
 - No fast retries on wrong passwords, so your server's fail2ban never blocks the gateway.
 
@@ -80,6 +87,7 @@ The gateway keeps the password to itself and enforces your rules on every reques
                                  │ Auth       key → exactly one mailbox   │
  Agent ◀──signed webhook──────── │ Policy     who may write / be written  │
                                  │ Review     rules · LLM · your policies │
+                                 │ Inbound    file types · virus · inject.│
                                  │ Converter  HTML ⇄ Markdown             │
                                  │ Calendar   invitations and replies     │
                                  │ Mailbox    IMAP + instant new-mail push│──IMAP──▶ your mail server
@@ -165,11 +173,43 @@ forwards, invitations and their changes, and comments in invitation answers.
             recipients: [sam@yourmailserver.eu]
 ```
 
-A rule with `recipients` applies only when one of those people receives the message (To, Cc,
+Policies also read attachments: text files, PDFs, and images when `attachments.read_images` is
+set. A rule with `recipients` applies only when one of those people receives the message (To, Cc,
 Bcc or invitation attendee). With [Ollama](https://ollama.com) the review runs entirely on your
 own machine; no mail content leaves your server. Long messages are checked in parts — nothing
 is cut off; part size and limits are configurable to fit your model's context window. The built-in review prompt can be replaced or
 extended — see [docs/configuration.md](docs/configuration.md#review-before-sending).
+
+## Incoming mail checks
+
+Allow lists decide *who* can reach your agent; these checks look at *what* arrives. For each
+check you choose what a finding does: **hide** the message (like a sender that is not allowed),
+**flag** it (the agent sees it with a warning and cannot download dangerous files), or **off**.
+With `skip_senders` a check is skipped for trusted senders — so you can still send your agent
+instructions by mail.
+
+| Check | Default | What it does |
+|---|---|---|
+| `dangerous_attachment` | `flag` | Programs and scripts (by name and content), Office files with macros, disguised files (`invoice.pdf` that is not a PDF), ZIPs with programs, password-protected archives. Applies to outgoing files too. |
+| `virus` | `hide` | Scans every attachment with [ClamAV](https://www.clamav.net) (optional container); also outgoing. |
+| `prompt_injection` | `flag` | The model from `review.llm` checks text, PDFs and images for instructions aimed at an AI. |
+| `scan_failed` | `flag` | A check could not run (scanner or model unreachable). |
+
+```yaml
+    attachments:
+      clamav: { host: clamav, port: 3310 }          # optional, see docker-compose.yml
+      read_images: { engine: ocr, languages: [eng, deu] }   # or a vision model
+    inbound_checks:
+      prompt_injection:
+        action: flag
+        skip_senders: [you@yourmailserver.eu]       # your own instructions are not flagged
+      dangerous_attachment: { action: hide }
+```
+
+Images are read by a vision model (e.g. `qwen2.5vl` in Ollama) or by OCR inside the gateway
+([Tesseract](https://github.com/naptha/tesseract.js)); PDFs by [pdf.js](https://mozilla.github.io/pdf.js/).
+Everything runs on your own machine if you want it to. Details:
+[docs/configuration.md](docs/configuration.md#attachments-and-incoming-mail-checks).
 
 ## Using it
 
@@ -183,7 +223,7 @@ Point any MCP client at `http://<host>:8080/mcp` with the header
 | `get_mailbox_info` | Own address, current date and time, allow lists, limits and the review rules/policies |
 | `list_messages` | Received mail, newest first; filter by unread, or search by text, sender, subject, date |
 | `read_message` | One message as Markdown, incl. attachments list and received invitations |
-| `get_attachment` | Download an attachment |
+| `get_attachment` | Download an attachment, or read a PDF/image as text (`format: "text"`) |
 | `mark_message` / `delete_message` | Mark read/unread; move to Trash (if allowed) |
 | `send_message` | Send a new email (Markdown, attachments) |
 | `reply_message` / `forward_message` | Reply (or reply-all) in the thread; forward with attachments |

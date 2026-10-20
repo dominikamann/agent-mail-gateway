@@ -141,7 +141,7 @@ describe('reply and forward', () => {
         from: 'x@partner.local',
         subject: 'Contract',
         text: 'Contract attached',
-        attachments: [{ filename: 'c.pdf', content: 'PDF', contentType: 'application/pdf' }],
+        attachments: [{ filename: 'c.pdf', content: '%PDF', contentType: 'application/pdf' }],
       }),
     );
     await forwardMessage(ctx, `1-${uid}`, {
@@ -169,7 +169,7 @@ describe('review of forwards and quotes', () => {
         from: 'x@partner.local',
         subject: 'Contract',
         text: 'Contract attached. TODO: sign',
-        attachments: [{ filename: 'c.pdf', content: 'PDF', contentType: 'application/pdf' }],
+        attachments: [{ filename: 'c.pdf', content: '%PDF', contentType: 'application/pdf' }],
       }),
     );
     await forwardMessage(ctx, `1-${uid}`, {

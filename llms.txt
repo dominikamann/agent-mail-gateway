@@ -1,6 +1,6 @@
 # Agent Mail Gateway
 
-> Self-hosted email gateway and MCP server that gives each AI agent its own mailbox. Agents get one API key bound to one IMAP/SMTP mailbox and can read mail (as Markdown), send mail with attachments, and send/update/cancel calendar invites — restricted by per-mailbox allow lists for senders and recipients. One Docker container, MIT license.
+> Self-hosted email gateway and MCP server that gives each AI agent its own mailbox. Agents get one API key bound to one IMAP/SMTP mailbox and can read mail (as Markdown), send mail with attachments, and send/update/cancel calendar invites — restricted by per-mailbox allow lists for senders and recipients, with checks of attachments and content (dangerous files, ClamAV virus scan, prompt injection) and PDFs/images as text. One Docker container, MIT license.
 
 Use it when an agent needs email: sending reports or alerts, receiving tasks by email, replying in threads, scheduling meetings, or several agents with separate mailboxes on an existing mail server — without giving the agent the mailbox password or unrestricted access.
 

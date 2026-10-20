@@ -1,5 +1,14 @@
+import { extractText, readableImage } from '../attachments/extract.js';
 import { formatInZone } from '../calendar/time.js';
 import { GatewayError } from '../errors.js';
+import {
+  inspect,
+  type SecurityFinding,
+  scanCanHide,
+  securityView,
+  storedVerdict,
+  type Verdict,
+} from '../inbound/scan.js';
 import { decodeMessageId, encodeMessageId } from '../mail/ids.js';
 import type { FetchedMessage, MessageMeta } from '../mail/imap.js';
 import { type ParsedMessage, parseHeaders, parseMessage } from '../mail/parse.js';
@@ -17,6 +26,8 @@ export interface MessageSummary {
   preview: string;
   unread: boolean;
   has_attachments: boolean;
+  /** Types of security findings (e.g. prompt_injection); only present when there are some. */
+  security_flags?: string[];
 }
 
 export interface InvitationView {
@@ -42,7 +53,16 @@ export interface MessageDetail extends MessageSummary {
   /** Calendar invitation (or update, cancellation, reply) contained in the message. */
   invitation: InvitationView | null;
   body_markdown: string;
-  attachments: { index: number; filename: string; content_type: string; size: number }[];
+  attachments: {
+    index: number;
+    filename: string;
+    content_type: string;
+    size: number;
+    /** Why this file must not be opened or passed on (virus, dangerous file type). */
+    blocked?: string;
+  }[];
+  /** Security findings of the inbound checks; only present when the message was flagged. */
+  security?: { findings: SecurityFinding[]; note: string };
 }
 
 export function mailboxInfo(ctx: MailboxContext) {
@@ -58,6 +78,12 @@ export function mailboxInfo(ctx: MailboxContext) {
     max_sends_per_hour: c.max_sends_per_hour,
     max_attachment_mb: c.max_attachment_mb,
     timezone: c.timezone,
+    // Checks on received mail and what a finding does (hide | flag | off).
+    inbound_checks: {
+      virus: c.attachments.clamav ? c.inbound_checks.virus.action : 'off',
+      dangerous_attachment: c.inbound_checks.dangerous_attachment.action,
+      prompt_injection: c.review.llm ? c.inbound_checks.prompt_injection.action : 'off',
+    },
     // What outgoing mail must pass, so the agent can comply on the first try.
     review: {
       rules: c.review.rules,
@@ -69,6 +95,9 @@ export function mailboxInfo(ctx: MailboxContext) {
     },
   };
 }
+
+const flags = (v: Verdict | null) =>
+  v && v.findings.length > 0 ? { security_flags: [...new Set(v.findings.map((f) => f.type))] } : {};
 
 function summary(id: string, parsed: ParsedMessage, seen: boolean): MessageSummary {
   return {
@@ -147,10 +176,13 @@ export async function listMessages(
 
   const messages: MessageSummary[] = [];
   let lastReturned: number | null = null;
+  // Checks that may hide mail must have run before a message is listed; others are shown
+  // from stored results only (read_message runs them).
+  const mustScan = scanCanHide(ctx.config);
   let i = 0;
   while (i < candidates.length && messages.length < q.limit) {
     const batch = candidates.slice(i, i + BATCH);
-    i += batch.length;
+    let next = i + batch.length;
     // Decide on headers only, so blocked mail is never downloaded.
     const allowed: MessageMeta[] = [];
     for (const meta of (await ctx.imap.fetchMeta(batch)).sort((a, b) => b.uid - a.uid)) {
@@ -159,11 +191,19 @@ export async function listMessages(
       if (q.before && meta.internalDate && meta.internalDate >= q.before) continue;
       if (!decideInbound(ctx.config, await parseHeaders(meta.header)).allowed) continue;
       allowed.push(meta);
-      if (messages.length + allowed.length === q.limit) break;
+      if (messages.length + allowed.length === q.limit) {
+        // Continue after this message next time, if some of these turn out to be hidden.
+        next = candidates.indexOf(meta.uid) + 1;
+        break;
+      }
     }
-    const small = allowed.filter((m) => m.size <= PREVIEW_MAX_BYTES).map((m) => m.uid);
-    const sources = new Map((await ctx.imap.fetch(small)).map((f) => [f.uid, f]));
+    i = next;
+    const toFetch = allowed
+      .filter((m) => mustScan || m.size <= PREVIEW_MAX_BYTES)
+      .map((m) => m.uid);
+    const sources = new Map((await ctx.imap.fetch(toFetch)).map((f) => [f.uid, f]));
     for (const meta of allowed) {
+      if (messages.length >= q.limit) break;
       let parsed: ParsedMessage;
       try {
         parsed = await parseForSummary(ctx, meta, sources.get(meta.uid));
@@ -174,11 +214,16 @@ export async function listMessages(
         );
         continue;
       }
+      const verdict = mustScan
+        ? await inspect(ctx, validity, meta.uid, parsed, { listing: true })
+        : storedVerdict(ctx, validity, meta.uid);
+      lastReturned = meta.uid;
+      if (verdict?.hiddenBy) continue;
       messages.push({
         ...summary(encodeMessageId(validity, meta.uid), parsed, meta.seen),
         has_attachments: meta.hasAttachments || parsed.attachments.length > 0,
+        ...flags(verdict),
       });
-      lastReturned = meta.uid;
     }
   }
   const last = lastReturned;
@@ -189,7 +234,7 @@ export async function listMessages(
 export async function loadAllowed(
   ctx: MailboxContext,
   id: string,
-): Promise<{ uid: number; seen: boolean; parsed: ParsedMessage }> {
+): Promise<{ uid: number; seen: boolean; parsed: ParsedMessage; verdict: Verdict }> {
   const decoded = decodeMessageId(id);
   if (!decoded) throw notFound();
   const validity = await ctx.imap.uidValidity();
@@ -200,7 +245,9 @@ export async function loadAllowed(
   const [fetched] = await ctx.imap.fetch([decoded.uid]);
   if (!fetched) throw notFound();
   const parsed = await parseMessage(fetched.raw, { timezone: ctx.config.timezone });
-  return { uid: fetched.uid, seen: fetched.seen, parsed };
+  const verdict = await inspect(ctx, validity, fetched.uid, parsed);
+  if (verdict.hiddenBy) throw notFound();
+  return { uid: fetched.uid, seen: fetched.seen, parsed, verdict };
 }
 
 export async function getMessage(
@@ -208,10 +255,12 @@ export async function getMessage(
   id: string,
   markRead: boolean,
 ): Promise<MessageDetail> {
-  const { uid, seen, parsed } = await loadAllowed(ctx, id);
+  const { uid, seen, parsed, verdict } = await loadAllowed(ctx, id);
   if (markRead && !seen) await ctx.imap.setSeen(uid, true);
+  const security = securityView(verdict);
   return {
     ...summary(id, parsed, markRead || seen),
+    ...flags(verdict),
     message_id: parsed.messageId,
     reply_to: parsed.replyTo,
     invitation: parsed.invitation
@@ -239,15 +288,58 @@ export async function getMessage(
       filename: a.filename,
       content_type: a.contentType,
       size: a.size,
+      ...(verdict.blocked.has(a.index) ? { blocked: verdict.blocked.get(a.index) } : {}),
     })),
+    ...(security ? { security } : {}),
   };
 }
 
+/** Throws attachment_blocked for a file a security check found dangerous. */
+export function assertNotBlocked(verdict: Verdict, index: number): void {
+  const reason = verdict.blocked.get(index);
+  if (reason) {
+    throw new GatewayError(
+      'attachment_blocked',
+      `This attachment was blocked by the gateway: ${reason}`,
+      { index, reason },
+    );
+  }
+}
+
 export async function getAttachment(ctx: MailboxContext, id: string, index: number) {
-  const { parsed } = await loadAllowed(ctx, id);
+  const { parsed, verdict } = await loadAllowed(ctx, id);
   const a = parsed.attachments[index];
   if (!a) throw new GatewayError('not_found', 'Attachment not found');
+  assertNotBlocked(verdict, index);
   return { filename: a.filename, contentType: a.contentType, content: a.content };
+}
+
+/** Readable text of an attachment: text files, the text layer of PDFs, text in images. */
+export async function getAttachmentText(ctx: MailboxContext, id: string, index: number) {
+  const a = await getAttachment(ctx, id, index);
+  let text: string | null;
+  try {
+    text = await extractText(a, {
+      readImages: ctx.config.attachments.read_images,
+      fetch: ctx.fetch,
+      dataDir: ctx.dataDir,
+    });
+  } catch (err) {
+    ctx.log.warn({ mailbox: ctx.config.name, err: (err as Error).message }, 'could not read file');
+    throw new GatewayError(
+      'unreadable',
+      `Could not read text from ${a.filename}; try again later.`,
+    );
+  }
+  if (text === null) {
+    throw new GatewayError(
+      'unreadable',
+      readableImage(a.content) && !ctx.config.attachments.read_images
+        ? `${a.filename} is an image and reading images is not enabled for this mailbox.`
+        : `${a.filename} contains no readable text (e.g. a scanned PDF or a binary file).`,
+    );
+  }
+  return { filename: a.filename, content_type: a.contentType, text };
 }
 
 export async function markMessage(ctx: MailboxContext, id: string, unread: boolean): Promise<void> {

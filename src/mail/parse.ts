@@ -33,6 +33,10 @@ export interface ParsedMessage extends ParsedHeaders {
 
 type Parsed = Awaited<ReturnType<typeof simpleParser>>;
 
+/** A calendar file (invitation, update, reply), by type or name. */
+export const isCalendarFile = (a: { contentType: string; filename: string }) =>
+  /^(text\/calendar|application\/ics)/i.test(a.contentType) || /\.ics$/i.test(a.filename);
+
 function flatten(field: AddressObject | AddressObject[] | undefined): EmailAddress[] {
   if (!field) return [];
   const list = Array.isArray(field) ? field : [field];
