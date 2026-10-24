@@ -28,8 +28,8 @@
     "fastify": "^5.12.7",
     "fastify-type-provider-zod": "^7.0.0",
     "ical-generator": "^11.1.2",
-    "imapflow": "^2.4.3",
-    "mailparser": "^3.9.39",
+    "imapflow": "^2.8.0",
+    "mailparser": "^3.12.2",
     "marked": "^18.1.1",
     "nodemailer": "^10.0.13",
     "pino": "^10.4.0",
@@ -41,7 +41,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.15",
+    "@biomejs/biome": "^2.6.2",
     "@types/mailparser": "^3.9.0",
     "@types/node": "^26.6.5",
     "@types/nodemailer": "^8.0.2",
