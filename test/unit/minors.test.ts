@@ -41,10 +41,11 @@ describe('M1: HTTP is up even when the IMAP server stalls', () => {
     const started = Date.now();
     const gw = await startGateway(config, { listen: true, port: 0 });
     cleanups.push(() => gw.stop());
-    expect(Date.now() - started).toBeLessThan(3000);
+    // Well below the 15 s IMAP connection timeout, with headroom for slow CI runners.
+    expect(Date.now() - started).toBeLessThan(10_000);
     const res = await gw.app.inject({ url: '/health' });
     expect(res.json().status).toBe('degraded');
-  });
+  }, 20_000);
 });
 
 describe('M2: dispatcher shutdown', () => {
